@@ -1,9 +1,14 @@
-#ifndef GENERIC_COMMON_H
-#define GENERIC_COMMON_H
+#ifndef GLOBAL_COMMON_H
+#define GLOBAL_COMMON_H
 
 #include <Arduino.h>
+#include "dwin_vp.h"
+#include "esp_task.h"
 #include "esp_node.h"
-#include "vp_config.h"
+
+// === Device Configuration ===
+#define HW_VERSION "v1.0.0"
+#define FW_VERSION "v1.0.2"
 
 // === Debugging Macros ===
 #define DEBUG_ENABLED 1 // Set 0 for production
@@ -20,4 +25,4 @@
   #define debug_printf(...)
 #endif
 
-#endif /* GENERIC_COMMON_H */
+#endif // GLOBAL_COMMON_H
