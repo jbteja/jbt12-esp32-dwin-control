@@ -1,6 +1,9 @@
-#include "vp_config.h"
+#include "dwin_vp.h"
 
-// === GLOBAL VARIABLES ===
+// === DWIN HMI Initialization ===
+DWIN hmi(DGUS_SERIAL, 16, 17, DGUS_BAUD); // Serial2 16 as Rx and 17 as Tx
+
+// === Global Instance ===
 vp_values_t vp;
 Preferences prefs;
 

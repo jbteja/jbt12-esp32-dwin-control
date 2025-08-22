@@ -1,6 +1,7 @@
-#ifndef VP_CONFIG_H
-#define VP_CONFIG_H
+#ifndef DWIN_VP_CONFIG_H
+#define DWIN_VP_CONFIG_H
 
+#include <DWIN.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -59,7 +60,8 @@ typedef struct {
   uint8_t config_network;
 } vp_values_t;
 
-// === Global INStance ===
+// === EXTERNAL OBJECTS ===
+extern DWIN hmi;
 extern vp_values_t vp;
 
 // === VP ITEM STRUCT ===
@@ -69,6 +71,10 @@ typedef struct {
   void* storage_ptr;
   size_t storage_size;
 } vp_item_t;
+
+// === DWIN CONFIGURATION ===
+#define DGUS_BAUD 115200
+#define DGUS_SERIAL Serial2
 
 // === MACROS FOR VP ITEMS ===
 #define VP_ITEM_UINT8(addr, field)   { \
@@ -183,4 +189,4 @@ bool vp_sync_item(uint16_t address, const void* new_value);
 }
 #endif
 
-#endif // VP_CONFIG_H
+#endif // DWIN_VP_CONFIG_H
