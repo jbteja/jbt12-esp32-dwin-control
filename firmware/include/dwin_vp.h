@@ -58,6 +58,13 @@ typedef struct {
   char  wifi_password[32];
   char  ip_address[16];
   char  conn_and_signal[16];
+
+  char holder_ssid[16];
+  char holder_ip[16];
+  char holder_signal[16];
+  char holder_host[16];
+  char holder_fw_ver[7];
+  char holder_hw_ver[7];
 } vp_values_t;
 
 // === EXTERNAL OBJECTS ===
@@ -125,6 +132,14 @@ typedef struct {
 #define VP_IP_ADDRESS         0x1440
 #define VP_CONN_AND_SIGNAL    0x1450
 
+#define VP_HOLDER_SSID   0x1500
+#define VP_HOLDER_IP     0x1510
+#define VP_HOLDER_SIGNAL 0x1520
+#define VP_HOLDER_HOST   0x1530
+#define VP_HOLDER_FW_VER 0x1540
+#define VP_HOLDER_HW_VER 0x1550
+
+
 // === VP ITEM TABLE ===
 static const vp_item_t vp_items[] = {
   VP_ITEM_STRING(VP_TIME, time_str),
@@ -165,7 +180,14 @@ static const vp_item_t vp_items[] = {
   VP_ITEM_STRING(VP_WIFI_SSID, wifi_ssid),
   VP_ITEM_STRING(VP_WIFI_PASSWORD, wifi_password),
   VP_ITEM_STRING(VP_IP_ADDRESS, ip_address),
-  VP_ITEM_STRING(VP_CONN_AND_SIGNAL, conn_and_signal)
+  VP_ITEM_STRING(VP_CONN_AND_SIGNAL, conn_and_signal),
+
+  VP_ITEM_STRING(VP_HOLDER_SSID, holder_ssid),
+  VP_ITEM_STRING(VP_HOLDER_IP, holder_ip),
+  VP_ITEM_STRING(VP_HOLDER_SIGNAL, holder_signal),
+  VP_ITEM_STRING(VP_HOLDER_HOST, holder_host),
+  VP_ITEM_STRING(VP_HOLDER_FW_VER, holder_fw_ver),
+  VP_ITEM_STRING(VP_HOLDER_HW_VER, holder_hw_ver)
 };
 
 // === COUNT ===

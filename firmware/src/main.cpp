@@ -20,6 +20,17 @@ void setup() {
     // Load VP values from NVS and save defaults
     if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
         vp_load_values();
+
+        // Set default placeholder texts
+        vp_set_string(VP_HOLDER_SSID, "Network (SSID)");
+        vp_set_string(VP_HOLDER_IP, "IP Address");
+        vp_set_string(VP_HOLDER_SIGNAL, "Signal Strength");
+        vp_set_string(VP_HOLDER_HOST, "Device ID");
+        vp_set_string(VP_HOLDER_FW_VER, "FW Version");
+        vp_set_string(VP_HOLDER_HW_VER, "HW Version");
+        vp_set_string(VP_IP_ADDRESS, "0.0.0.0");
+        vp_set_string(VP_CONN_AND_SIGNAL, "Disconnected");
+
         if (strlen(vp.hw_version) == 0 || strcmp(vp.hw_version, HW_VERSION) != 0) {
             vp_set_string(VP_HW_VERSION, HW_VERSION);
         }
@@ -72,15 +83,15 @@ void setup() {
         0                  // Core ID (Core 0)
     );
 
-    xTaskCreatePinnedToCore(
-        TaskApp,
-        "App_Task",
-        4096,
-        NULL,
-        TASK_PRIORITY_APP,
-        &xAppTaskHandle,
-        1               // Core ID (Core 1)
-    );
+    // xTaskCreatePinnedToCore(
+    //     TaskApp,
+    //     "App_Task",
+    //     4096,
+    //     NULL,
+    //     TASK_PRIORITY_APP,
+    //     &xAppTaskHandle,
+    //     1               // Core ID (Core 1)
+    // );
 
     debug_println("[BOOT] Tasks created. Scheduler starting...");
     //hmi.beepHMI();

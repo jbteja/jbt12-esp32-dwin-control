@@ -92,6 +92,15 @@ void hmi_init() {
     hmi_update_value(VP_FAN_ON_MIN);
     hmi_update_value(VP_FAN_OFF_HR);
     hmi_update_value(VP_FAN_OFF_MIN);
+
+    hmi_update_value(VP_WIFI_STA_STATE);
+
+    hmi_update_text(VP_HOLDER_SSID);
+    hmi_update_text(VP_HOLDER_IP);
+    hmi_update_text(VP_HOLDER_SIGNAL);
+    hmi_update_text(VP_HOLDER_HOST);
+    hmi_update_text(VP_HOLDER_FW_VER);
+    hmi_update_text(VP_HOLDER_HW_VER);
 }
 
 // == Callback function for DWIN events ===
