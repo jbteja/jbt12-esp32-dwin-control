@@ -52,12 +52,12 @@ typedef struct {
   uint8_t fan_off_hr;
   uint8_t fan_off_min;
 
-  char  wifi_state[16];
+  uint8_t wifi_ap_state;
+  uint8_t wifi_sta_state;
   char  wifi_ssid[32];
   char  wifi_password[32];
   char  ip_address[16];
-  char  signal_strength[16];
-  uint8_t config_network;
+  char  conn_and_signal[16];
 } vp_values_t;
 
 // === EXTERNAL OBJECTS ===
@@ -118,12 +118,12 @@ typedef struct {
 #define VP_FAN_OFF_HR         0x1340
 #define VP_FAN_OFF_MIN        0x1350
 
-#define VP_WIFI_STATE         0x1400
-#define VP_WIFI_SSID          0x1410
-#define VP_WIFI_PASSWORD      0x1420
-#define VP_IP_ADDRESS         0x1430
-#define VP_SIGNAL_STRENGTH    0x1440
-#define VP_CONFIG_NETWORK     0x1450
+#define VP_WIFI_AP_STATE      0x1400
+#define VP_WIFI_STA_STATE     0x1410
+#define VP_WIFI_SSID          0x1420
+#define VP_WIFI_PASSWORD      0x1430
+#define VP_IP_ADDRESS         0x1440
+#define VP_CONN_AND_SIGNAL    0x1450
 
 // === VP ITEM TABLE ===
 static const vp_item_t vp_items[] = {
@@ -160,12 +160,12 @@ static const vp_item_t vp_items[] = {
   VP_ITEM_UINT8(VP_FAN_OFF_HR, fan_off_hr),
   VP_ITEM_UINT8(VP_FAN_OFF_MIN, fan_off_min),
 
-  VP_ITEM_STRING(VP_WIFI_STATE, wifi_state),
+  VP_ITEM_STRING(VP_WIFI_AP_STATE, wifi_ap_state),
+  VP_ITEM_STRING(VP_WIFI_STA_STATE, wifi_sta_state),
   VP_ITEM_STRING(VP_WIFI_SSID, wifi_ssid),
   VP_ITEM_STRING(VP_WIFI_PASSWORD, wifi_password),
   VP_ITEM_STRING(VP_IP_ADDRESS, ip_address),
-  VP_ITEM_STRING(VP_SIGNAL_STRENGTH, signal_strength),
-  VP_ITEM_UINT8(VP_CONFIG_NETWORK, config_network)
+  VP_ITEM_STRING(VP_CONN_AND_SIGNAL, conn_and_signal)
 };
 
 // === COUNT ===

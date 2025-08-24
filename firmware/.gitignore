@@ -8,7 +8,3 @@
 
 # Ignore Assigned Device ID file
 devices.json
-
-# Ignore everything except firmware
-/*
-!/firmware
