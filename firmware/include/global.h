@@ -8,7 +8,7 @@
 
 // === Device Configuration ===
 #define HW_VERSION "v1.0.0"
-#define FW_VERSION "v1.0.2"
+#define FW_VERSION "v1.0.4"
 
 // === Debugging Macros ===
 #define DEBUG_ENABLED 1 // Set 0 for production
