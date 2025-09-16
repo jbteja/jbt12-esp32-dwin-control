@@ -25,23 +25,37 @@ void setup() {
         vp_set_string(VP_HOLDER_SSID, "Network (SSID)");
         vp_set_string(VP_HOLDER_IP, "IP Address");
         vp_set_string(VP_HOLDER_SIGNAL, "Signal Strength");
-        vp_set_string(VP_HOLDER_HOST, "Device ID");
+        vp_set_string(VP_HOLDER_HOSTNAME, "Device ID");
         vp_set_string(VP_HOLDER_FW_VER, "FW Version");
         vp_set_string(VP_HOLDER_HW_VER, "HW Version");
-        vp_set_string(VP_IP_ADDRESS, "0.0.0.0");
-        vp_set_string(VP_CONN_AND_SIGNAL, "Disconnected");
 
-        if (strlen(vp.hw_version) == 0 || strcmp(vp.hw_version, HW_VERSION) != 0) {
+        // Set defaults if empty or changed
+        vp_set_string(VP_IP_ADDRESS, "0.0.0.0");
+        vp_set_string(VP_PSWD_AND_SIGNAL, "Disconnected");
+
+        // Time default
+        vp_set_string(VP_TIME, "00:00");
+
+        // Version info
+        if (strlen(vp.hw_version) == 0 || 
+            strcmp(vp.hw_version, HW_VERSION) != 0
+        ) {
             vp_set_string(VP_HW_VERSION, HW_VERSION);
         }
 
-        if (strlen(vp.fw_version) == 0 || strcmp(vp.fw_version, FW_VERSION) != 0) {
+        if (strlen(vp.fw_version) == 0 ||
+            strcmp(vp.fw_version, FW_VERSION) != 0
+        ) {
             vp_set_string(VP_FW_VERSION, FW_VERSION);
         }
 
-        if (vp.time_str[0] == '\0') {
-            snprintf(vp.time_str, sizeof(vp.time_str), "00:00");
+        // If no SSID saved, enable AP mode by default
+        if (vp.wifi_ssid[0] == '\0') {
+            vp.wifi_ap_state = 1;
         }
+
+        // Test defaults, Simulated values
+        vp.wifi_ap_state = 1;
 
         vp_save_values();
         xSemaphoreGive(xVPMutex);
@@ -57,10 +71,19 @@ void setup() {
         vp.water_state,
         vp.fan_state
     );
+    debug_printf(
+        "[BOOT] WiFi STA: %d, AP: %d\n",
+        vp.wifi_state,
+        vp.wifi_ap_state
+    );
+    debug_printf("[BOOT] WiFi SSID: %s\n", vp.wifi_ssid);
 
     // Initialize IO pins and HMI
     io_init();
     hmi_init();
+
+    // Explicitly set, esp defaults to STA+AP
+    WiFi.mode(WIFI_STA);
     
     // Create tasks with core affinity
     xTaskCreatePinnedToCore(
