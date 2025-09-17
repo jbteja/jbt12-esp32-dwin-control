@@ -1,4 +1,5 @@
-#include "dwin_vp.h"
+#include "global.h"
+#include "vp_dwin.h"
 
 // === DWIN HMI Initialization ===
 DWIN hmi(DGUS_SERIAL, 16, 17, DGUS_BAUD); // Serial2 16 as Rx and 17 as Tx
@@ -79,7 +80,7 @@ bool vp_set_value(uint16_t address, uint8_t value) {
 const char* vp_get_string(uint16_t address) {
     for (size_t i = 0; i < num_vp_items; i++) {
         if (vp_items[i].address == address && vp_items[i].type == VP_STRING) {
-            return (const char*)vp_items[i].storage_ptr;
+            return (char*)vp_items[i].storage_ptr;
         }
     }
 
@@ -170,4 +171,55 @@ bool vp_sync_item(uint16_t address, const void* new_value) {
     }
 
     return changed;
+}
+
+// === Queue HMI update for a value ===
+void hmi_update_value(uint16_t address) {
+    hmi_update_item_t msg = {
+        .type = HMI_UPDATE_VALUE,
+        .address = address
+    };
+
+    // Queue the update
+    BaseType_t xStatus = xQueueSend(xHMIUpdateQueue, &msg, portMAX_DELAY);
+
+    if (xStatus != pdPASS) {
+        debug_printf(
+            "[ERROR] Failed to queue HMI value update for address 0x%04X\n",
+            address
+        );
+    }
+}
+
+// === Queue HMI update for a text field ===
+void hmi_update_string(uint16_t address) {
+    hmi_update_item_t msg = {
+        .type = HMI_UPDATE_STRING,
+        .address = address
+    };
+
+    // Queue the update
+    BaseType_t xStatus = xQueueSend(xHMIUpdateQueue, &msg, portMAX_DELAY);
+
+    if (xStatus != pdPASS) {
+        debug_printf(
+            "[ERROR] Failed to queue HMI string update for address 0x%04X\n",
+            address
+        );
+    }
+}
+
+// === Queue full HMI refresh ===
+void hmi_update_all() {
+    hmi_update_item_t msg = {
+        .type = HMI_UPDATE_ALL,
+        .address = 0
+    };
+
+    // Queue the update
+    BaseType_t xStatus = xQueueSend(xHMIUpdateQueue, &msg, portMAX_DELAY);
+
+    if (xStatus != pdPASS) {
+        debug_println("[ERROR] Failed to queue full HMI refresh");
+    }
 }

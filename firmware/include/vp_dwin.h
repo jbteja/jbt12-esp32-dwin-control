@@ -1,5 +1,5 @@
-#ifndef DWIN_VP_CONFIG_H
-#define DWIN_VP_CONFIG_H
+#ifndef VP_DWIN_CONFIG_H
+#define VP_DWIN_CONFIG_H
 
 #include <DWIN.h>
 #include <stdint.h>
@@ -192,6 +192,19 @@ static const vp_item_t vp_items[] = {
 // === COUNT ===
 static const size_t num_vp_items = sizeof(vp_items) / sizeof(vp_item_t);
 
+// === HMI update types ===
+typedef enum {
+  HMI_UPDATE_VALUE,
+  HMI_UPDATE_STRING,
+  HMI_UPDATE_ALL
+} hmi_update_type_t;
+
+// === HMI update structure ===
+typedef struct {
+  hmi_update_type_t type;
+  uint16_t address;
+} hmi_update_item_t;
+
 // === FUNCTION PROTOTYPES ===
 #ifdef __cplusplus
 extern "C" {
@@ -205,8 +218,12 @@ const char* vp_get_string(uint16_t address);
 bool vp_set_string(uint16_t address, const char* value);
 bool vp_sync_item(uint16_t address, const void* new_value);
 
+void hmi_update_value(uint16_t address);
+void hmi_update_string(uint16_t address);
+void hmi_update_all();
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif // DWIN_VP_CONFIG_H
+#endif // VP_DWIN_CONFIG_H
