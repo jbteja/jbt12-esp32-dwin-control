@@ -2,13 +2,13 @@
 #define GLOBAL_COMMON_H
 
 #include <Arduino.h>
-#include "dwin_vp.h"
+#include "vp_dwin.h"
 #include "esp_task.h"
 #include "esp_node.h"
 
 // === Device Configuration ===
 #define HW_VERSION "v1.0.0"
-#define FW_VERSION "v1.0.4"
+#define FW_VERSION "v1.0.5"
 
 // === Debugging Macros ===
 #define DEBUG_ENABLED 1 // Set 0 for production

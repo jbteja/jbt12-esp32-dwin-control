@@ -1,6 +1,8 @@
 #include "global.h"
 
 extern DWIN hmi;
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, NTP_SERVER);
 
 // === Device Configuration ===
 void io_init() {
@@ -13,94 +15,45 @@ void io_init() {
     digitalWrite(RELAY_PIN_4, LOW);
 }
 
-// === Update HMI Text Fields ===
-void hmi_update_text(uint16_t address) {
-    const char* str = vp_get_string(address);
-    size_t maxlen = 0;
+// === Address to Pin Mapping for Relays ===
+uint8_t io_pin_map(uint16_t address) {
+    switch (address) {
+        case VP_LIGHT_STATE:
+            return LIGHT_RELAY;
 
-    // Find the storage_size for this address
-    for (size_t i = 0; i < num_vp_items; i++) {
-        if (vp_items[i].address == address && vp_items[i].type == VP_STRING) {
-            maxlen = vp_items[i].storage_size;
-            break;
-        }
+        case VP_WATER_STATE:
+            return WATER_RELAY;
+
+        case VP_FAN_STATE:
+            return FAN_RELAY;
+
+        default:
+            return 0; // No pin mapping
     }
-
-    if (str && maxlen > 0) {
-        size_t real_len = strnlen(str, maxlen);
-
-        // Create padded string with spaces
-        String padded_str;
-        padded_str.reserve(maxlen);
-        padded_str = String(str).substring(0, real_len);  // Ensure not exceeding real_len
-        while (padded_str.length() < maxlen) {
-            padded_str += ' ';
-        }
-
-        hmi.setText(address, padded_str);
-    } else {
-        // Send blank string with full padding
-        String blank(maxlen, ' ');
-        hmi.setText(address, blank);
-    }
-
-    delay(30); // Allow time for HMI to process
 }
 
-// === Set Relay and Update HMI Display ===
-void hmi_update_value(uint16_t address, uint8_t pin) {
-    uint8_t val = vp_get_value(address);
-    hmi.setVP(address, val);
-    if (pin != 0) {
-        digitalWrite(pin, val);
+// === NTP Client Initialization ===
+void ntp_client_init(void) {
+    timeClient.begin();
+    timeClient.setTimeOffset(NTP_OFFSET);
+    timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL);
+}
+
+// === NTP Client Update ===
+void ntp_client_update(void) {
+    if(!timeClient.isTimeSet()) {
+        debug_println("[NTP] Time not set, Calling forceUpdate");
+        timeClient.forceUpdate();
+    } else {
+        timeClient.update();
     }
-    delay(30);
+    debug_printf("[NTP] Current time: %s\n", timeClient.getFormattedTime().c_str());
 }
 
 // === HMI Initialization ===
 void hmi_init() {
-    debug_println("Initializing DWIN HMI...");
-    hmi_update_text(VP_TIME);
-    hmi_update_text(VP_HOSTNAME);
-    hmi_update_value(VP_PLANT_ID);
-    hmi_update_value(VP_TOTAL_CYCLE);
-    hmi_update_value(VP_GROWTH_DAY);
-    hmi_update_value(VP_GROWTH_BAR);
-    hmi_update_text(VP_GROWTH_STR);
-    hmi_update_text(VP_FW_VERSION);
-    hmi_update_text(VP_HW_VERSION);
-
-    hmi_update_value(VP_LIGHT_STATE, LIGHT_RELAY);
-    hmi_update_value(VP_LIGHT_AUTO);
-    hmi_update_value(VP_LIGHT_ON_HR);
-    hmi_update_value(VP_LIGHT_ON_MIN);
-    hmi_update_value(VP_LIGHT_OFF_HR);
-    hmi_update_value(VP_LIGHT_OFF_MIN);
-        
-    hmi_update_value(VP_WATER_STATE, WATER_RELAY);
-    hmi_update_value(VP_WATER_AUTO);
-    hmi_update_value(VP_WATER_ON_HR);
-    hmi_update_value(VP_WATER_ON_MIN);
-    hmi_update_value(VP_WATER_OFF_HR);
-    hmi_update_value(VP_WATER_OFF_MIN);
-    hmi_update_value(VP_WATER_INTERVAL_HR);
-    hmi_update_value(VP_WATER_DURATION_SEC);
-
-    hmi_update_value(VP_FAN_STATE, FAN_RELAY);
-    hmi_update_value(VP_FAN_AUTO);
-    hmi_update_value(VP_FAN_ON_HR);
-    hmi_update_value(VP_FAN_ON_MIN);
-    hmi_update_value(VP_FAN_OFF_HR);
-    hmi_update_value(VP_FAN_OFF_MIN);
-
-    hmi_update_value(VP_WIFI_STA_STATE);
-
-    hmi_update_text(VP_HOLDER_SSID);
-    hmi_update_text(VP_HOLDER_IP);
-    hmi_update_text(VP_HOLDER_SIGNAL);
-    hmi_update_text(VP_HOLDER_HOST);
-    hmi_update_text(VP_HOLDER_FW_VER);
-    hmi_update_text(VP_HOLDER_HW_VER);
+    debug_println("[BOOT] Initializing DWIN HMI");
+    hmi_update_all();
 }
 
 // == Callback function for DWIN events ===
@@ -138,22 +91,22 @@ void hmi_on_event(String address, int data, String message, String response) {
                     hmi_update_value(VP_GROWTH_BAR);
 
                     snprintf(vp.growth_str, sizeof(vp.growth_str), "%d/%d", vp.growth_day, vp.total_cycle);
-                    hmi_update_text(VP_GROWTH_STR);
+                    hmi_update_string(VP_GROWTH_STR);
 
                     vp_save_values();
                     break;
                 }
 
                 case VP_LIGHT_STATE:
-                    hmi_update_value(VP_LIGHT_STATE, LIGHT_RELAY);
+                    hmi_update_value(VP_LIGHT_STATE);
                     break;
 
                 case VP_WATER_STATE:
-                    hmi_update_value(VP_WATER_STATE, WATER_RELAY);
+                    hmi_update_value(VP_WATER_STATE);
                     break;
 
                 case VP_FAN_STATE:
-                    hmi_update_value(VP_FAN_STATE, FAN_RELAY);
+                    hmi_update_value(VP_FAN_STATE);
                     break;
 
                 default:

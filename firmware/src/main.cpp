@@ -17,6 +17,13 @@ void setup() {
     hmi.hmiCallBack(hmi_on_event);
     delay(500);
 
+    // Create queue for HMI updates
+    xHMIUpdateQueue = xQueueCreate(15, sizeof(hmi_update_item_t));
+    if (xHMIUpdateQueue == NULL) {
+        debug_println("[ERROR] Failed to create HMI update queue");
+        while(1); // Hang on error
+    }
+
     // Load VP values from NVS and save defaults
     if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
         vp_load_values();
@@ -35,6 +42,14 @@ void setup() {
 
         // Time default
         vp_set_string(VP_TIME, "00:00");
+
+        // Hostname when not set during production
+        if (strlen(vp.hostname) == 0) {
+            uint64_t mac = ESP.getEfuseMac();
+            uint32_t mac_tail = (uint32_t)(mac & 0xFFFF);
+            snprintf(vp.hostname, sizeof(vp.hostname), "E-%04X", mac_tail);
+            vp_set_string(VP_HOSTNAME, vp.hostname);
+        }
 
         // Version info
         if (strlen(vp.hw_version) == 0 || 
@@ -55,7 +70,11 @@ void setup() {
         }
 
         // Test defaults, Simulated values
-        vp.wifi_ap_state = 1;
+        vp.light_auto = 1;
+        vp.water_auto = 1;
+        vp.fan_auto = 1;
+        vp.wifi_state = 1;
+        //vp.wifi_ap_state = 1;
 
         vp_save_values();
         xSemaphoreGive(xVPMutex);
@@ -66,17 +85,17 @@ void setup() {
     debug_printf("[BOOT] HW Version: %s\n", vp.hw_version);
     debug_printf("[BOOT] FW Version: %s\n", vp.fw_version);
     debug_printf(
-        "[BOOT] Light: %d, Water: %d, Fan: %d\n",
-        vp.light_state,
-        vp.water_state,
-        vp.fan_state
-    );
-    debug_printf(
         "[BOOT] WiFi STA: %d, AP: %d\n",
         vp.wifi_state,
         vp.wifi_ap_state
     );
     debug_printf("[BOOT] WiFi SSID: %s\n", vp.wifi_ssid);
+    debug_printf(
+        "[BOOT] Light: %d, Water: %d, Fan: %d\n",
+        vp.light_state,
+        vp.water_state,
+        vp.fan_state
+    );
 
     // Initialize IO pins and HMI
     io_init();
@@ -106,17 +125,17 @@ void setup() {
         0                  // Core ID (Core 0)
     );
 
-    // xTaskCreatePinnedToCore(
-    //     TaskApp,
-    //     "App_Task",
-    //     4096,
-    //     NULL,
-    //     TASK_PRIORITY_APP,
-    //     &xAppTaskHandle,
-    //     1               // Core ID (Core 1)
-    // );
+    xTaskCreatePinnedToCore(
+        TaskSync,
+        "Sync_Task",
+        4096,
+        NULL,
+        TASK_PRIORITY_SYNC,
+        &xSyncTaskHandle,
+        1               // Core ID (Core 1)
+    );
 
-    debug_println("[BOOT] Tasks created. Scheduler starting...");
+    debug_println("[BOOT] Tasks created. Setup complete!");
     //hmi.beepHMI();
 
     // Delete the setup task as it's no longer needed
