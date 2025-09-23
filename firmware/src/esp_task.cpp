@@ -3,10 +3,13 @@
 // Task handles
 TaskHandle_t xHMITaskHandle = NULL;
 TaskHandle_t xWiFiTaskHandle = NULL;
-TaskHandle_t xAppTaskHandle = NULL;
+TaskHandle_t xSyncTaskHandle = NULL;
 
 // Mutex for shared resources
 SemaphoreHandle_t xVPMutex = NULL;
+
+// Queue for HMI updates
+QueueHandle_t xHMIUpdateQueue = NULL;
 
 // Events
 EventGroupHandle_t eventGroup = xEventGroupCreate();
@@ -17,13 +20,140 @@ void TaskHMI(void *pvParameters) {
     debug_printf("[HMI] Task started on core %d\n", xPortGetCoreID());
 
     // Wait for initialization to complete
-    while (xVPMutex == NULL) {
+    while (xVPMutex == NULL || xHMIUpdateQueue == NULL) {
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }
     
+    hmi_update_item_t msg;
+    TickType_t last_listen_time = xTaskGetTickCount();
+    const TickType_t listen_interval = pdMS_TO_TICKS(10); // Listen every 10ms
+
     for (;;) {
-        // Process HMI communication
-        hmi.listen();
+        TickType_t current_time = xTaskGetTickCount();
+
+        // Process incoming HMI data
+        if ((current_time - last_listen_time) >= listen_interval) {
+            hmi.listen();
+            last_listen_time = current_time;
+        }
+
+        // Process queued HMI updates
+        while (xQueueReceive(xHMIUpdateQueue, &msg, 0) == pdTRUE) {
+            if (msg.type == HMI_UPDATE_VALUE) {
+                uint8_t val = 0;
+                if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
+                    val = vp_get_value(msg.address);
+                    xSemaphoreGive(xVPMutex);
+                } 
+                
+                // Update HMI display
+                hmi.setVP(msg.address, val);
+                
+                // Control relay if pin is assigned
+                uint8_t pin = io_pin_map(msg.address);
+                if (pin != 0) {
+                    digitalWrite(pin, val);
+                }
+                
+                // Short delay to process
+                vTaskDelay(30 / portTICK_PERIOD_MS);
+            
+            } else if (msg.type == HMI_UPDATE_STRING) {
+                const char* str = "";
+                size_t maxlen = 0;
+                if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
+                    str = vp_get_string(msg.address);
+                    
+                    // Find the storage_size for this address
+                    for (size_t i = 0; i < num_vp_items; i++) {
+                        if (vp_items[i].address == msg.address && 
+                            vp_items[i].type == VP_STRING) {
+                            maxlen = vp_items[i].storage_size;
+                            break;
+                        }
+                    }
+                    xSemaphoreGive(xVPMutex);
+                }
+                        
+                // Create padded string
+                String padded_str;
+                if (str && maxlen > 0) {
+                    size_t real_len = strnlen(str, maxlen);
+                    padded_str.reserve(maxlen);
+                    padded_str = String(str).substring(0, real_len);
+                    while (padded_str.length() < maxlen) {
+                        padded_str += ' ';
+                    }
+
+                } else if (maxlen > 0) {
+                    // Send blank string with full padding
+                    padded_str = String(maxlen, ' ');
+                
+                } else {
+                    padded_str = ""; // No padding if maxlen is 0
+                }
+                
+                // Update HMI display
+                hmi.setText(msg.address, padded_str);
+                
+                // Short delay to process
+                vTaskDelay(30 / portTICK_PERIOD_MS);
+
+            } else if (msg.type == HMI_UPDATE_ALL) {
+                debug_println("[HMI] Processing full update request");
+                
+                // Update all VP items
+                for (size_t i = 0; i < num_vp_items; i++) {
+                    if (vp_items[i].type == VP_UINT8) {
+                        uint8_t val = 0;
+                        if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
+                            val = vp_get_value(vp_items[i].address);
+                            xSemaphoreGive(xVPMutex);
+                        }
+                        hmi.setVP(vp_items[i].address, val);
+                        
+                        // Control relay if pin is assigned
+                        uint8_t pin = io_pin_map(vp_items[i].address);
+                        if (pin != 0) {
+                            digitalWrite(pin, val);
+                        }
+
+                    } else if (vp_items[i].type == VP_STRING) {
+                        const char* str = "";
+                        size_t maxlen = vp_items[i].storage_size;
+                        if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
+                            str = vp_get_string(vp_items[i].address);
+                            xSemaphoreGive(xVPMutex);
+                        }
+                        
+                        // Create padded string
+                        String padded_str;
+                        if (str && maxlen > 0) {
+                            size_t real_len = strnlen(str, maxlen);
+                            padded_str.reserve(maxlen);
+                            padded_str = String(str).substring(0, real_len);
+                            while (padded_str.length() < maxlen) {
+                                padded_str += ' ';
+                            }
+
+                        } else if (maxlen > 0) {
+                            // Send blank string with full padding
+                            padded_str = String(maxlen, ' ');
+                        
+                        } else {
+                            padded_str = ""; // No padding if maxlen is 0
+                        }
+                        
+                        hmi.setText(vp_items[i].address, padded_str);
+                    }
+
+                    // Short delay between updates
+                    vTaskDelay(30 / portTICK_PERIOD_MS);
+                }
+            } else {
+                debug_printf("[HMI] Unknown update type: %d\n", msg.type);
+            }
+        }
         
         // Yield to other tasks
         vTaskDelay(1 / portTICK_PERIOD_MS);
@@ -73,7 +203,7 @@ void TaskWiFi(void *pvParameters) {
 
             // HMI AP mode parameters
             if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-                vp_set_string(VP_HOLDER_SIGNAL, "Password"); // For showing in HMI
+                vp_set_string(VP_HOLDER_SIGNAL, "Password"); // For HMI
                 vp_set_string(VP_PSWD_AND_SIGNAL, WIFI_AP_PSWD);
                 vp_set_string(VP_IP_ADDRESS, WiFi.softAPIP().toString().c_str());
                 vp_save_values();
@@ -89,14 +219,15 @@ void TaskWiFi(void *pvParameters) {
             // Start configuration portal
             debug_printf("[WiFi AP] SSID: %s\n", vp.hostname);
             debug_printf("[WiFi AP] Password: %s\n", WIFI_AP_PSWD);
+            debug_printf("[WiFi AP] IP Address: %s\n", vp.ip_address);
             
             if (!wm.startConfigPortal(vp.hostname, WIFI_AP_PSWD)) {
                 debug_println("[WiFi AP] Config portal timeout, no WiFi configured");
                 
                 // Reset AP state and return to STA mode
                 if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-                    vp.wifi_state = 1;
-                    vp.wifi_ap_state = 0;
+                    vp_set_value(VP_WIFI_STATE, 1);
+                    vp_set_value(VP_WIFI_AP_STATE, 0);
                     vp_save_values();
                     xSemaphoreGive(xVPMutex);
                 }
@@ -112,11 +243,10 @@ void TaskWiFi(void *pvParameters) {
                     vp_set_string(VP_WIFI_PSWD, WiFi.psk().c_str());
                     
                     // Reset AP state
-                    vp.wifi_state = 1;
-                    vp.wifi_ap_state = 0;
+                    vp_set_value(VP_WIFI_STATE, 1);
+                    vp_set_value(VP_WIFI_AP_STATE, 0);
                     vp_set_string(VP_HOLDER_SIGNAL, "Signal Strength");
                     vp_set_string(VP_PSWD_AND_SIGNAL, "Connected");
-
                     vp_save_values();
                     xSemaphoreGive(xVPMutex);
                 }
@@ -169,6 +299,7 @@ void TaskWiFi(void *pvParameters) {
                 // Save IP address
                 if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
                     vp_set_string(VP_IP_ADDRESS, WiFi.localIP().toString().c_str());
+                    // TODO: Update signal strength
                     vp_save_values();
                     xSemaphoreGive(xVPMutex);
                 }
@@ -235,322 +366,67 @@ void TaskWiFi(void *pvParameters) {
     }
 }
 
-//     WiFiManager wm;
-//     bool ap_mode_active = false;
-//     bool wifi_connected = false;
+// === Scheduler / Sync Task ===
+void TaskSync(void *pvParameters) {
+    debug_printf("[SYNC] Task started on core %d\n", xPortGetCoreID());
+    static TickType_t current_time;
+    static bool on_boot_int = false;
+    static bool water_window = false;
     
-//     // Configure WiFiManager
-//     wm.setDebugOutput(false);
-//     wm.setConfigPortalTimeout(180); // 3 minutes timeout
-//     wm.setSaveConfigCallback([]() {
-//         debug_println("[WiFi] Configuration saved, will attempt connection");
-//     });
-    
-//     for (;;) {
-//         if (vp.wifi_ap_state && !ap_mode_active) {
-//             debug_println("[WiFi] AP mode started");
-            
-//             WiFiManager wm;
-//             ap_mode_active = true;
-//             xEventGroupClearBits(eventGroup, WIFI_CONNECTED_BIT);
+    // Timer tracking variables
+    TickType_t last_check = 0;
+    TickType_t last_sync = 0;
+    TickType_t last_water_trigger = 0;
 
-//             // Set AP mode parameters
-//             if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-//                 vp_sync_item(VP_WIFI_PASSWORD, WIFI_AP_PASSWORD);
-//                 xSemaphoreGive(xVPMutex);
-//             }
-            
-//             wm.autoConnect(vp.hostname, WIFI_AP_PASSWORD);
-//             debug_printf("[WiFi AP] SSID: %s\n", vp.hostname);
-//             debug_printf("[WiFi AP] Password: %s\n", WIFI_AP_PASSWORD);
-//             debug_printf("[WiFi AP] IP Address: %s\n", WiFi.softAPIP().toString().c_str());
-//         } else if (!vp.wifi_ap_state && ap_mode_active) {
-//             debug_println("[WiFi] AP mode stopped");
-//             ap_mode_active = false;
-//         }
-//     }
+    for (;;) {
+        current_time = xTaskGetTickCount();
 
-//     ota_init();
-//     ota_mdns_init();
-//     ntp_client_init();
+        // Regular checks (every 5 second)
+        if ((current_time - last_check) >= pdMS_TO_TICKS(5000)) {
+            last_check = current_time;
+            
+            // Get current time
+            int hours = timeClient.getHours();
+            int minutes = timeClient.getMinutes();
 
-//     // Flag to track WiFi connection status
-//     bool wifi_connected = false;
-//     bool ap_mode_active = false;
-//     String hostname = String(vp.hostname) + "-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+            if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
+                // Light automation
 
-    
-//     // Check initial WiFi mode settings
-//     if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-//         debug_println("[WiFi] Task started");
-        
-//         // Check if AP mode is requested
-//         if (vp.wifi_ap_state) {
-//             debug_println("[WiFi] Starting AP mode");
-            
-//             // Start WiFi in AP mode
-//             WiFi.mode(WIFI_AP);
-//             WiFi.softAP(hostname.c_str(), "password123");
-//             ap_mode_active = true;
-            
-//             // Update HMI
-//             vp.wifi_sta_state = 0;
-//             hmi.setVP(VP_WIFI_STA_STATE, vp.wifi_sta_state);
-            
-//             // Set IP address display
-//             IPAddress ip = WiFi.softAPIP();
-//             snprintf(vp.ip_address, sizeof(vp.ip_address), "%d.%d.%d.%d", 
-//                     ip[0], ip[1], ip[2], ip[3]);
-//             hmi.setVP(VP_IP_ADDRESS, vp.ip_address);
-            
-//             // Set connection status
-//             snprintf(vp.conn_and_signal, sizeof(vp.conn_and_signal), "AP Mode Active");
-//             hmi.setVP(VP_CONN_AND_SIGNAL, vp.conn_and_signal);
-//         } 
-//         // Try to connect to saved WiFi if available
-//         else if (strlen(vp.wifi_ssid) > 0) {
-//             debug_printf("[WiFi] Connecting to saved network: %s\n", vp.wifi_ssid);
-            
-//             WiFi.mode(WIFI_STA);
-//             WiFi.begin(vp.wifi_ssid, vp.wifi_password);
-//         }
-        
-//         xSemaphoreGive(xVPMutex);
-//     }
-    
-//     // Initialize event group for task synchronization
-//     EventGroupHandle_t wifi_event_group = xEventGroupCreate();
-//     const int WIFI_CONNECTED_BIT = BIT0;
-    
-//     // Main task loop
-//     for (;;) {
-//         // Check WiFi connection status
-//         if (WiFi.status() == WL_CONNECTED && !wifi_connected) {
-//             wifi_connected = true;
-            
-//             if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-//                 debug_println("[WiFi] Connected to WiFi!");
-                
-//                 // Update connection status
-//                 vp.wifi_sta_state = 1;
-//                 hmi.setVP(VP_WIFI_STA_STATE, vp.wifi_sta_state);
-                
-//                 // Save current WiFi credentials if we were in AP mode
-//                 if (ap_mode_active) {
-//                     strncpy(vp.wifi_ssid, WiFi.SSID().c_str(), sizeof(vp.wifi_ssid));
-//                     strncpy(vp.wifi_password, WiFi.psk().c_str(), sizeof(vp.wifi_password));
-//                     vp.wifi_ssid[sizeof(vp.wifi_ssid) - 1] = '\0';
-//                     vp.wifi_password[sizeof(vp.wifi_password) - 1] = '\0';
-//                     vp.wifi_ap_state = 0;
-//                     hmi.setVP(VP_WIFI_AP_STATE, vp.wifi_ap_state);
-//                     vp_save_values();
-//                     ap_mode_active = false;
-//                 }
-                
-//                 // Set IP address display
-//                 IPAddress ip = WiFi.localIP();
-//                 snprintf(vp.ip_address, sizeof(vp.ip_address), "%d.%d.%d.%d", 
-//                         ip[0], ip[1], ip[2], ip[3]);
-//                 hmi.setVP(VP_IP_ADDRESS, vp.ip_address);
-                
-//                 // Set connection status with signal strength
-//                 int rssi = WiFi.RSSI();
-//                 snprintf(vp.conn_and_signal, sizeof(vp.conn_and_signal), "RSSI: %d dBm", rssi);
-//                 hmi.setVP(VP_CONN_AND_SIGNAL, vp.conn_and_signal);
-                
-//                 xSemaphoreGive(xVPMutex);
-                
-//                 // Initialize NTP and OTA after WiFi connection
-//                 ntp_client_init();
-//                 ota_init();
-//                 ota_mdns_init();
-                
-//                 // Set the connected bit to notify other tasks
-//                 xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-//             }
-//         } 
-//         else if (WiFi.status() != WL_CONNECTED && wifi_connected) {
-//             wifi_connected = false;
-            
-//             if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-//                 debug_println("[WiFi] Disconnected from WiFi");
-                
-//                 // Update connection status
-//                 vp.wifi_sta_state = 0;
-//                 hmi.setVP(VP_WIFI_STA_STATE, vp.wifi_sta_state);
-                
-//                 // Clear IP and connection status
-//                 snprintf(vp.ip_address, sizeof(vp.ip_address), "0.0.0.0");
-//                 hmi.setVP(VP_IP_ADDRESS, vp.ip_address);
-                
-//                 snprintf(vp.conn_and_signal, sizeof(vp.conn_and_signal), "Disconnected");
-//                 hmi.setVP(VP_CONN_AND_SIGNAL, vp.conn_and_signal);
-                
-//                 xSemaphoreGive(xVPMutex);
-                
-//                 // Clear the connected bit
-//                 xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
-//             }
-//         }
-        
-//         // Check for AP mode toggle from HMI
-//         if (xSemaphoreTake(xVPMutex, 0) == pdTRUE) {
-//             // If AP mode is requested but not active
-//             if (vp.wifi_ap_state && !ap_mode_active) {
-//                 debug_println("[WiFi] AP mode requested from HMI");
-                
-//                 // Disconnect from current WiFi if connected
-//                 if (wifi_connected) {
-//                     WiFi.disconnect();
-//                     wifi_connected = false;
-//                 }
-                
-//                 // Start AP mode
-//                 WiFi.mode(WIFI_AP);
-//                 WiFi.softAP(hostname.c_str(), "password123");
-//                 ap_mode_active = true;
-                
-//                 // Update HMI
-//                 vp.wifi_sta_state = 0;
-//                 hmi.setVP(VP_WIFI_STA_STATE, vp.wifi_sta_state);
-                
-//                 // Set IP address display
-//                 IPAddress ip = WiFi.softAPIP();
-//                 snprintf(vp.ip_address, sizeof(vp.ip_address), "%d.%d.%d.%d", 
-//                         ip[0], ip[1], ip[2], ip[3]);
-//                 hmi.setVP(VP_IP_ADDRESS, vp.ip_address);
-                
-//                 // Set connection status
-//                 snprintf(vp.conn_and_signal, sizeof(vp.conn_and_signal), "AP Mode Active");
-//                 hmi.setVP(VP_CONN_AND_SIGNAL, vp.conn_and_signal);
-//             }
-//             // If AP mode is turned off but active
-//             else if (!vp.wifi_ap_state && ap_mode_active) {
-//                 debug_println("[WiFi] AP mode disabled from HMI");
-                
-//                 // Stop AP mode and try to connect to saved WiFi
-//                 WiFi.softAPDisconnect(true);
-//                 ap_mode_active = false;
-                
-//                 // Try to connect to saved WiFi if available
-//                 if (strlen(vp.wifi_ssid) > 0) {
-//                     debug_printf("[WiFi] Connecting to saved network: %s\n", vp.wifi_ssid);
-                    
-//                     WiFi.mode(WIFI_STA);
-//                     WiFi.begin(vp.wifi_ssid, vp.wifi_password);
-//                 }
-//             }
-            
-//             xSemaphoreGive(xVPMutex);
-//         }
-        
-//         // Update NTP client periodically when connected
-//         static unsigned long last_ntp_update = 0;
-//         if (wifi_connected && (millis() - last_ntp_update > NTP_UPDATE_INTERVAL)) {
-//             ntp_client_update();
-//             last_ntp_update = millis();
-//         }
-        
-//         // Handle OTA updates when connected
-//         if (wifi_connected) {
-//             ArduinoOTA.handle();
-//         }
-        
-//         // Short delay to prevent task starvation
-//         vTaskDelay(100 / portTICK_PERIOD_MS);
-//     }
-// }
+                xSemaphoreGive(xVPMutex);
+            }
 
+            //debug_println("[SYNC] Regular check complete (1 s)");
+        }
 
+        // Periodic checks (every 15 seconds)
+        if ((current_time - last_sync) >= pdMS_TO_TICKS(15000)) {
+            last_sync = current_time;
 
+            // Get current time
+            int hours = timeClient.getHours();
+            int minutes = timeClient.getMinutes();
 
-// void TaskWiFi(void *pvParameters) {
-//     // Initialize WiFi manager
-//     WiFiManagerHandler::init();
-    
-//     // Load saved WiFi credentials
-//     if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-//         if (strlen(vp.wifi_ssid) > 0) {
-//             WiFi.begin(vp.wifi_ssid, vp.wifi_password);
-//         }
-//         xSemaphoreGive(xVPMutex);
-//     }
-    
-//     for (;;) {
-//         // Check for WiFi config notification
-//         uint32_t notificationValue;
-//         if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, 0) == pdTRUE) {
-//             if (notificationValue & NOTIFICATION_WIFI_CONFIG) {
-//                 WiFiManagerHandler::startConfigPortal();
-//             }
-            
-//             if (notificationValue & NOTIFICATION_SUSPEND) {
-//                 // Suspend task until resumed
-//                 ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-//             }
-//         }
-        
-//         // Handle WiFi manager
-//         WiFiManagerHandler::handle();
-        
-//         // Update WiFi status on HMI
-//         updateWiFiStatus();
-        
-//         // Handle OTA updates
-//         ArduinoOTA.handle();
-        
-//         vTaskDelay(10000 / portTICK_PERIOD_MS);
-//     }
-// }
+            // Update data to display on HMI
+            if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
+                String time = String(hours) + ":" +
+                              (minutes < 10 ? "0" : "") +
+                              String(minutes);
 
-// void TaskApplication(void *pvParameters) {
-//     const TickType_t xFrequency = 1000 / portTICK_PERIOD_MS;
-//     TickType_t xLastWakeTime = xTaskGetTickCount();
-    
-//     for (;;) {
-//         // Wait for next cycle
-//         vTaskDelayUntil(&xLastWakeTime, xFrequency);
-        
-//         // Check for suspend notification
-//         uint32_t notificationValue;
-//         if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, 0) == pdTRUE) {
-//             if (notificationValue & NOTIFICATION_SUSPEND) {
-//                 // Suspend task until resumed
-//                 ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-//             }
-//         }
-        
-//         // Application logic here
-//         // (e.g., update growth bar, check sensors, etc.)
-        
-//         // Example: Update growth bar periodically
-//         if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-//             if (vp.total_cycle > 0) {
-//                 uint8_t bar = (uint8_t)round((vp.growth_day / (float)vp.total_cycle) * 20.0f);
-//                 if (bar < 1) bar = 1;
-//                 if (bar > 20) bar = 20;
-//                 vp.growth_bar = bar;
-//                 hmi_update_value(VP_GROWTH_BAR);
-//             }
-//             xSemaphoreGive(xVPMutex);
-//         }
-//     }
-// }
+                // Update only if changed
+                if (strcmp(vp_get_string(VP_TIME), time.c_str()) != 0 &&
+                    !time.isEmpty()
+                ) {
+                    vp_set_string(VP_TIME, time.c_str());
+                    vp_save_values();
+                    hmi_update_string(VP_TIME);
+                }
+                xSemaphoreGive(xVPMutex);
+            }
 
-// void updateWiFiStatus() {
-//     if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-//         if (WiFi.isConnected()) {
-//             snprintf(vp.wifi_status, sizeof(vp.wifi_status), 
-//                      "Connected: %s", WiFi.SSID().c_str());
-//         } else if (WiFiManagerHandler::isConfigPortalActive()) {
-//             snprintf(vp.wifi_status, sizeof(vp.wifi_status), 
-//                      "Config Mode: GrowBox_AP");
-//         } else {
-//             snprintf(vp.wifi_status, sizeof(vp.wifi_status), 
-//                      "Disconnected");
-//         }
-        
-//         hmi_update_text(VP_WIFI_STATUS);
-//         xSemaphoreGive(xVPMutex);
-//     }
-// }
+            //debug_println("[SYNC] Periodic update to HMI (15 s)");
+        }
+
+        // Shorter delay for more frequent checks
+        vTaskDelay(50 / portTICK_PERIOD_MS);
+    }
+}
