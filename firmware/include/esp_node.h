@@ -5,8 +5,9 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
 #define WIFI_AP_PSWD "password"
+#define WIFI_AP_TIMEOUT 180 // 3 mins 
 #define WIFI_STA_MAX_RETRY 15
-#define WIFI_STA_RETRY_DELAY 3*60*1000 // 3 minutes
+#define WIFI_STA_RETRY_DELAY 3*60*1000 // 3 mins
 
 // === OTA Configuration ===
 #include <ESPmDNS.h>
@@ -20,7 +21,7 @@
 extern NTPClient timeClient;
 #define NTP_SERVER "asia.pool.ntp.org"
 #define NTP_OFFSET 19800 // UTC+5:30
-#define NTP_UPDATE_INTERVAL 60*60*1000 // 1 hour
+#define NTP_UPDATE_INTERVAL 30*60*1000 // 30 mins
 
 // === Pin Mapping ===
 #define LIGHT_RELAY 23
@@ -35,8 +36,17 @@ extern "C" {
 
 void io_init();
 uint8_t io_pin_map(uint16_t address);
+void io_pin_trigger(
+    uint8_t enable, uint8_t current_state,
+    uint8_t on_hr, uint8_t on_min,
+    uint8_t off_hr, uint8_t off_min,
+    uint16_t current_hr, uint16_t current_min,
+    uint16_t grace_min, bool on_boot,
+    uint16_t address, const char *relay_str
+);
+
 void ntp_client_init();
-void ntp_client_update();
+void ntp_client_update(bool force = false);
 void hmi_init();
 void hmi_on_event(String address, int data, String message, String response);
 
