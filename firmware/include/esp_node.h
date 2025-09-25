@@ -44,6 +44,15 @@ void io_pin_trigger(
     uint16_t grace_min, bool on_boot,
     uint16_t address, const char *relay_str
 );
+void io_pin_trigger_interval_based(
+    uint8_t enable, uint8_t current_state,
+    uint8_t on_hr, uint8_t on_min,
+    uint8_t off_hr, uint8_t off_min,
+    uint16_t current_hr, uint16_t current_min,
+    uint16_t interval_hr, uint16_t duration_sec,
+    uint16_t address, const char *relay_str,
+    uint32_t *last_spray
+);
 
 void ntp_client_init();
 void ntp_client_update(bool force = false);
