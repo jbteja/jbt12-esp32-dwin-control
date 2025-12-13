@@ -41,7 +41,7 @@ void setup() {
         vp_set_string(VP_PSWD_AND_SIGNAL, "Disconnected");
 
         // Time default
-        vp_set_string(VP_TIME, "00:00");
+        // vp_set_string(VP_TIME, "00:00");
 
         // Hostname when not set during production
         if (strlen(vp.hostname) == 0) {
@@ -74,7 +74,7 @@ void setup() {
         vp.water_auto = 1;
         vp.fan_auto = 1;
         vp.wifi_state = 1;
-        //vp.wifi_ap_state = 1;
+        // vp.wifi_ap_state = 1;
 
         vp_save_values();
         xSemaphoreGive(xVPMutex);
