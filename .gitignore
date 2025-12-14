@@ -1,0 +1,53 @@
+.DS_Store
+Thumbs.db
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+env/
+venv/
+.venv/
+pip-wheel-metadata/
+build/
+dist/
+*.egg-info/
+
+# PlatformIO / ESP32
+.pio/
+.pioenvs/
+*.bin
+*.elf
+*.map
+*.hex
+*.app
+
+# C/C++ build artifacts
+*.o
+*.a
+*.so
+
+# Logs and coverage
+*.log
+.coverage
+htmlcov/
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# Local env files
+.env
+env.*
+
+# Windows image file cache
+ehthumbs.db
+Icon?

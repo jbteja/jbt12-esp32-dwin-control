@@ -1,6 +1,6 @@
 # DWIN HMI Control
 
-FreeRTOS-based dual-core ESP32 controller for DWIN/DGUS HMI displays.
+FreeRTOS-based dual-core ESP32 controller for DWIN/DGUS HMI display.
 Includes firmware (PlatformIO) that implements a UART protocol layer, plus
 Python scripts to emulate/monitor DWIN serial traffic for development and
 testing.
@@ -25,6 +25,7 @@ testing.
 
 - DWIN UART (RX2/TX2) ↔ ESP32 `Serial2` (`RX = GPIO16`, `TX = GPIO17`)
 - Default baud for DWIN communication: 115200 (see `DGUS_BAUD` in firmware).
+- Since we are using the existing hardware board, we need to create the required connector to connect the display to the ESP controller board.
 
 ### DWIN Connector Wiring
 
@@ -85,12 +86,15 @@ level shifter is recommended for production or noisy environments.
 
 - Find connected ESP32 COM ports:
 
-```bash
-python scripts/find_com_port.py
-```
+  ```bash
+  python scripts/find_com_port.py
+  ```
 
 - Monitor and emulate DWIN frames with the more feature-complete emulator:
 
-```bash
-python scripts/serial_emulator.py --port COM7 --baud 115200
-```
+  ```bash
+  python scripts/serial_emulator.py --port COMx --baud 115200
+  ```
+
+- On Windows, ports will be as "COMx". On Unix-like systems, they'll
+  be like "/dev/ttyUSB0" or "/dev/ttyACM0".
