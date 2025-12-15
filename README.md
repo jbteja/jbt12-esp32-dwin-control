@@ -16,20 +16,14 @@ testing.
 
 ## Hardware & Wiring
 
-- Common requirements:
-  - ESP32 operates at 3.3V; many DWIN displays use 5V TTL UART.
-  - Always share a common ground (connect GND of ESP32 and DWIN).
-  - Recommended: use a proper bidirectional level shifter for robust designs.
-
-### Pin Mapping
-
-- DWIN UART (RX2/TX2) ↔ ESP32 `Serial2` (`RX = GPIO16`, `TX = GPIO17`)
+- DWIN UART (RX2/TX2) - ESP32 `Serial2` (`RX = GPIO16`, `TX = GPIO17`)
 - Default baud for DWIN communication: 115200 (see `DGUS_BAUD` in firmware).
-- Since we are using the existing hardware board, we need to create the required connector to connect the display to the ESP controller board.
+- Always share a common ground (connect the GND of the ESP32 and the DWIN display).
+- Since we are using the existing hardware board, a custom connector must be created to connect the display to the ESP32 controller board.
 
 ### DWIN Connector Wiring
 
-```
+```code
 JST 8-PIN CONNECTOR     JST 6-PIN CONNECTOR
 ────────────────────────────────────────────
 Pin 1  GND  ----------- Pin 6  (GND)
@@ -44,7 +38,7 @@ Pin 8  +5V  ----------- Pin 1  (+5V)
 
 ### UART Connector Wiring
 
-```
+```code
 8-PIN JST Pin5 (TX2) ───[1.8kΩ]──┬───────► ESP32 GPIO16 (RX)
                                  │
                                  │
@@ -64,23 +58,17 @@ Pin 8  +5V  ----------- Pin 1  (+5V)
 
 Use a two-resistor divider to bring 5V -> ~3.3V for the ESP32 RX pin.
 
+```code
 Example:
 
-- Rtop = 1.8 kΩ, Rbot = 3.3 kΩ
-
+Rtop = 1.8 kΩ, Rbot = 3.3 kΩ
 Vout = 5V × (Rbot / (Rtop + Rbot)) = 5V × (3.3 / 5.1) ≈ 3.24 V
 
 Alternative resistor set: Rtop = 3.3 kΩ, Rbot = 6.2 kΩ → Vout ≈ 3.26 V
+```
 
 Note: ESP32 TX is 3.3V and is usually recognized as logic HIGH by DWIN, but a
 level shifter is recommended for production or noisy environments.
-
-### Recommended Protections
-
-- 10 µF electrolytic: bulk filtering on 5V rail
-- 100 nF ceramic: local decoupling near power pins
-- 220 Ω series resistors: optional current limiting on TX lines
-- 3.6 V Zener (optional): over-voltage clamp on ESP32 RX input
 
 ## Test & Serial Emulator
 
@@ -98,3 +86,10 @@ level shifter is recommended for production or noisy environments.
 
 - On Windows, ports will be as "COMx". On Unix-like systems, they'll
   be like "/dev/ttyUSB0" or "/dev/ttyACM0".
+
+## Recommended Protections
+
+- 10 µF electrolytic: bulk filtering on 5V rail
+- 100 nF ceramic: local decoupling near power pins
+- 220 Ω series resistors: optional current limiting on TX lines
+- 3.6 V Zener (optional): over-voltage clamp on ESP32 RX input
