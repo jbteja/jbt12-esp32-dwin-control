@@ -44,7 +44,7 @@ void io_pin_trigger(
     uint16_t grace_min, bool on_boot,
     uint16_t address, const char *relay_str
 );
-void io_pin_trigger_interval_based(
+void io_pin_trigger_interval(
     uint8_t enable, uint8_t current_state,
     uint8_t on_hr, uint8_t on_min,
     uint8_t off_hr, uint8_t off_min,

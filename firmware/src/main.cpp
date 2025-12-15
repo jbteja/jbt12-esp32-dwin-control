@@ -34,6 +34,7 @@ void setup() {
         vp_set_string(VP_HOLDER_IP, "IP Address");
         vp_set_string(VP_HOLDER_SIGNAL, "Signal Strength");
         vp_set_string(VP_HOLDER_HOSTNAME, "Device ID");
+        vp_set_string(VP_HOLDER_UI_VER, "UI Version");
         vp_set_string(VP_HOLDER_FW_VER, "FW Version");
         vp_set_string(VP_HOLDER_HW_VER, "HW Version");
 
@@ -50,16 +51,22 @@ void setup() {
         }
 
         // Version info
-        if (strlen(vp.hw_version) == 0 || 
-            strcmp(vp.hw_version, HW_VERSION) != 0
+        if (strlen(vp.ui_version) == 0 || 
+            strcmp(vp.ui_version, UI_VERSION) != 0
         ) {
-            vp_set_string(VP_HW_VERSION, HW_VERSION);
+            vp_set_string(VP_UI_VERSION, UI_VERSION);
         }
 
         if (strlen(vp.fw_version) == 0 ||
             strcmp(vp.fw_version, FW_VERSION) != 0
         ) {
             vp_set_string(VP_FW_VERSION, FW_VERSION);
+        }
+
+        if (strlen(vp.hw_version) == 0 || 
+            strcmp(vp.hw_version, HW_VERSION) != 0
+        ) {
+            vp_set_string(VP_HW_VERSION, HW_VERSION);
         }
 
         // If no SSID saved, enable AP mode by default

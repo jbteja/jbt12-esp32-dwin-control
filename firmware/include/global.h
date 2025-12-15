@@ -7,8 +7,9 @@
 #include "esp_node.h"
 
 // === Device Configuration ===
-#define HW_VERSION "v1.0.0"
+#define UI_VERSION "v1.0.8"
 #define FW_VERSION "v1.0.5"
+#define HW_VERSION "v1.0.0"
 
 // === Debugging Macros ===
 #define DEBUG_ENABLED 1 // Set 0 for production

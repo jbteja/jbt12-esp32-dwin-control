@@ -25,6 +25,7 @@ dist/
 *.o
 *.a
 *.so
+*.out
 
 # Logs and coverage
 *.log

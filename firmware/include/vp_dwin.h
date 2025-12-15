@@ -25,7 +25,8 @@ typedef struct {
   uint8_t total_cycle;
   uint8_t growth_day;
   uint8_t growth_bar;
-  char  growth_str[6];
+  char  growth_str[5];
+  char  ui_version[7];
   char  fw_version[7];
   char  hw_version[7];
 
@@ -63,6 +64,7 @@ typedef struct {
   char holder_ip[16];
   char holder_signal[16];
   char holder_host[16];
+  char holder_ui_ver[7];
   char holder_fw_ver[7];
   char holder_hw_ver[7];
 } vp_values_t;
@@ -99,8 +101,9 @@ typedef struct {
 #define VP_GROWTH_DAY         0x1040
 #define VP_GROWTH_BAR         0x1050
 #define VP_GROWTH_STR         0x1060
-#define VP_FW_VERSION         0x1070
-#define VP_HW_VERSION         0x1080
+#define VP_UI_VERSION         0x1070
+#define VP_FW_VERSION         0x1080
+#define VP_HW_VERSION         0x1090
 
 #define VP_LIGHT_STATE        0x1100
 #define VP_LIGHT_AUTO         0x1110
@@ -136,8 +139,9 @@ typedef struct {
 #define VP_HOLDER_IP          0x1510
 #define VP_HOLDER_SIGNAL      0x1520
 #define VP_HOLDER_HOSTNAME    0x1530
-#define VP_HOLDER_FW_VER      0x1540
-#define VP_HOLDER_HW_VER      0x1550
+#define VP_HOLDER_UI_VER      0x1540
+#define VP_HOLDER_FW_VER      0x1550
+#define VP_HOLDER_HW_VER      0x1560
 
 // === VP ITEM TABLE ===
 static const vp_item_t vp_items[] = {
@@ -148,6 +152,7 @@ static const vp_item_t vp_items[] = {
   VP_ITEM_UINT8(VP_GROWTH_DAY, growth_day),
   VP_ITEM_UINT8(VP_GROWTH_BAR, growth_bar),
   VP_ITEM_STRING(VP_GROWTH_STR, growth_str),
+  VP_ITEM_STRING(VP_UI_VERSION, ui_version),
   VP_ITEM_STRING(VP_FW_VERSION, fw_version),
   VP_ITEM_STRING(VP_HW_VERSION, hw_version),
 
@@ -185,6 +190,7 @@ static const vp_item_t vp_items[] = {
   VP_ITEM_STRING(VP_HOLDER_IP, holder_ip),
   VP_ITEM_STRING(VP_HOLDER_SIGNAL, holder_signal),
   VP_ITEM_STRING(VP_HOLDER_HOSTNAME, holder_host),
+  VP_ITEM_STRING(VP_HOLDER_UI_VER, holder_ui_ver),
   VP_ITEM_STRING(VP_HOLDER_FW_VER, holder_fw_ver),
   VP_ITEM_STRING(VP_HOLDER_HW_VER, holder_hw_ver)
 };
