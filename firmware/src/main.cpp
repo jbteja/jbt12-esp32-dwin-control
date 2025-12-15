@@ -1,6 +1,7 @@
 #include "global.h"
 
 void setup() {
+    hmi.restartHMI();
     debug_begin(115200);
     debug_println("[BOOT] Initializing communication...");
     delay(1000);
@@ -12,7 +13,7 @@ void setup() {
         while(1); // Hang on error
     }
 
-    // Initialize DWIN HMI
+    // Initialize DWIN
     hmi.echoEnabled(false);
     hmi.hmiCallBack(hmi_on_event);
     delay(500);
@@ -40,9 +41,6 @@ void setup() {
         vp_set_string(VP_IP_ADDRESS, "0.0.0.0");
         vp_set_string(VP_PSWD_AND_SIGNAL, "Disconnected");
 
-        // Time default
-        // vp_set_string(VP_TIME, "00:00");
-
         // Hostname when not set during production
         if (strlen(vp.hostname) == 0) {
             uint64_t mac = ESP.getEfuseMac();
@@ -69,11 +67,43 @@ void setup() {
             vp.wifi_ap_state = 1;
         }
 
-        // Test defaults, Simulated values
-        vp.light_auto = 1;
-        vp.water_auto = 1;
-        vp.fan_auto = 1;
-        vp.wifi_state = 1;
+        // Default schedules
+        if ((vp.light_on_hr == 0) && (vp.light_off_hr == 0)) {
+            vp.light_auto = 0;
+            vp.light_on_hr = 9;
+            vp.light_on_min = 0;
+            vp.light_off_hr = 21;
+            vp.light_off_min = 0;
+        }
+
+        if ((vp.water_on_hr == 0) && (vp.water_off_hr == 0)) {
+            vp.water_auto = 0;
+            vp.water_on_hr = 9;
+            vp.water_on_min = 0;
+            vp.water_off_hr = 18;
+            vp.water_off_min = 0;
+            vp.water_interval_hr = 3;
+            vp.water_duration_sec = 30;
+        }
+
+        if ((vp.fan_on_hr == 0) && (vp.fan_off_hr == 0)) {
+            vp.fan_auto = 0;
+            vp.fan_on_hr = 12;
+            vp.fan_on_min = 0;
+            vp.fan_off_hr = 21;
+            vp.fan_off_min = 0;
+        }
+
+        // Default growth cycle
+        if ((vp.total_cycle == 0) && (vp.growth_day == 0)) {
+            vp.plant_id = 0;
+            vp.growth_day = 1;
+            vp.total_cycle = 15; // Default 15 days 
+            vp_growth_bar_update();
+        }
+
+        // Test defaults & Simulated values
+        // vp.wifi_state = 1;
         // vp.wifi_ap_state = 1;
 
         vp_save_values();
@@ -136,7 +166,6 @@ void setup() {
     );
 
     debug_println("[BOOT] Tasks created. Setup complete!");
-    //hmi.beepHMI();
 
     // Delete the setup task as it's no longer needed
     vTaskDelete(NULL);

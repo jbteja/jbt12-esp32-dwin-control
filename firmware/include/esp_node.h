@@ -54,9 +54,10 @@ void io_pin_trigger_interval_based(
     uint32_t *last_spray
 );
 
-void ntp_client_init();
+void ntp_client_init(void);
 void ntp_client_update(bool force = false);
-void hmi_init();
+void vp_growth_bar_update(void);
+void hmi_init(void);
 void hmi_on_event(String address, int data, String message, String response);
 
 // === OTA Functions ===

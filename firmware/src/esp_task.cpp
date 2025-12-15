@@ -21,7 +21,7 @@ void TaskHMI(void *pvParameters) {
 
     // Wait for initialization to complete
     while (xVPMutex == NULL || xHMIUpdateQueue == NULL) {
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
     
     hmi_update_item_t msg;
@@ -56,7 +56,7 @@ void TaskHMI(void *pvParameters) {
                 }
                 
                 // Short delay to process
-                vTaskDelay(30 / portTICK_PERIOD_MS);
+                vTaskDelay(pdMS_TO_TICKS(30));
             
             } else if (msg.type == HMI_UPDATE_STRING) {
                 const char* str = "";
@@ -97,7 +97,7 @@ void TaskHMI(void *pvParameters) {
                 hmi.setText(msg.address, padded_str);
                 
                 // Short delay to process
-                vTaskDelay(30 / portTICK_PERIOD_MS);
+                vTaskDelay(pdMS_TO_TICKS(30));
 
             } else if (msg.type == HMI_UPDATE_ALL) {
                 debug_println("[HMI] Processing full update request");
@@ -148,7 +148,7 @@ void TaskHMI(void *pvParameters) {
                     }
 
                     // Short delay between updates
-                    vTaskDelay(30 / portTICK_PERIOD_MS);
+                    vTaskDelay(pdMS_TO_TICKS(30));
                 }
             } else {
                 debug_printf("[HMI] Unknown update type: %d\n", msg.type);
@@ -156,7 +156,7 @@ void TaskHMI(void *pvParameters) {
         }
         
         // Yield to other tasks
-        vTaskDelay(1 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
@@ -277,7 +277,7 @@ void TaskWiFi(void *pvParameters) {
             ) {
                 // Random delay between 3 and 10 seconds
                 uint32_t delay_ms = 3000 + (esp_random() % 7000);
-                vTaskDelay(delay_ms / portTICK_PERIOD_MS);
+                vTaskDelay(pdMS_TO_TICKS(delay_ms));
                 retries++;
                 debug_printf("[WiFi] Retries: %d, delay: %u sec\n", retries, delay_ms / 1000);
             }
@@ -345,7 +345,7 @@ void TaskWiFi(void *pvParameters) {
                 ArduinoOTA.handle();
                 
                 // Periodic NTP sync
-                if ((xTaskGetTickCount() - last_ntp_sync) > (NTP_UPDATE_INTERVAL / portTICK_PERIOD_MS)) {
+                if ((xTaskGetTickCount() - last_ntp_sync) > pdMS_TO_TICKS(NTP_UPDATE_INTERVAL)) {
                     ntp_client_update();
                     last_ntp_sync = xTaskGetTickCount();
                 }
@@ -354,108 +354,148 @@ void TaskWiFi(void *pvParameters) {
 
         // Reset retries after delay
         if (last_wifi_check != 0 &&
-            (xTaskGetTickCount() - last_wifi_check) > (WIFI_STA_RETRY_DELAY / portTICK_PERIOD_MS)
+            (xTaskGetTickCount() - last_wifi_check) > pdMS_TO_TICKS(WIFI_STA_RETRY_DELAY)
         ) {
             retries = 0;
             last_wifi_check = 0;
             debug_println("[WiFi] Retry delay elapsed, Trying to reconnect");
         }
 
-        // Small delay to prevent task from hogging CPU
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        // Yield to other tasks
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
 // === Scheduler / Sync Task ===
 void TaskSync(void *pvParameters) {
     debug_printf("[SYNC] Task started on core %d\n", xPortGetCoreID());
+    
     static TickType_t current_time;
     static bool on_boot = true;
-    static bool water_window = false;
-    const uint16_t GRACE_PERIOD_MIN = 1;
+    static uint32_t last_spray_time = 0;
+    const uint16_t grace_period_min = 1; // Error grace period
     
-    // Timer tracking variables
-    TickType_t last_check = 0;
-    TickType_t last_sync = 0;
-    TickType_t last_water_trigger = 0;
+    // Timer tracking for periodic operations
+    static TickType_t last_auto_check = 0;
+    static TickType_t last_time_check = 0;
+    static uint16_t last_auto_minute = -1;
+    
+    // Run automation checks more frequently for lower latency
+    const TickType_t AUTOMATION_INTERVAL = pdMS_TO_TICKS(500);    // 500 ms
+    const TickType_t TIME_UPDATE_INTERVAL = pdMS_TO_TICKS(5000);   // 5 secs
 
     for (;;) {
         current_time = xTaskGetTickCount();
 
-        // Periodic checks (every 15 second)
-        if ((current_time - last_check) >= pdMS_TO_TICKS(15000)) {
-            last_check = current_time;
+        // Automation Checks (every interval)
+        if ((current_time - last_auto_check) >= AUTOMATION_INTERVAL) {
+            last_auto_check = current_time;
+
+            // Get current time
+            int raw_hours = timeClient.getHours();
+            int raw_minutes = timeClient.getMinutes();
+
+            // Validate time before proceeding
+            if (raw_hours >= 0 && 
+                raw_hours <= 23 && 
+                raw_minutes >= 0 && 
+                raw_minutes <= 59) {
+                uint16_t hours = (uint16_t)raw_hours;
+                uint16_t minutes = (uint16_t)raw_minutes;
+
+                // Only run once per minute
+                if ((minutes != last_auto_minute) && 
+                    (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE)) {
+                    last_auto_minute = minutes;
+
+                    // Light automation
+                    if (vp.light_auto) {
+                        io_pin_trigger(
+                            vp.light_auto, vp.light_state,
+                            vp.light_on_hr, vp.light_on_min,
+                            vp.light_off_hr, vp.light_off_min,
+                            hours, minutes,
+                            grace_period_min, on_boot,
+                            VP_LIGHT_STATE, "Light"
+                        );
+                    }
+
+                    // Fan automation
+                    if (vp.fan_auto) {
+                        io_pin_trigger(
+                            vp.fan_auto, vp.fan_state,
+                            vp.fan_on_hr, vp.fan_on_min,
+                            vp.fan_off_hr, vp.fan_off_min,
+                            hours, minutes,
+                            grace_period_min, on_boot,
+                            VP_FAN_STATE, "Fan"
+                        );
+                    }
+
+                    xSemaphoreGive(xVPMutex);
+                }
+
+                // Spray automation runs every cycle
+                if (vp.water_auto &&
+                    xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
+                    io_pin_trigger_interval_based(
+                        vp.water_auto, vp.water_state,
+                        vp.water_on_hr, vp.water_on_min,
+                        vp.water_off_hr, vp.water_off_min,
+                        hours, minutes,
+                        vp.water_interval_hr, vp.water_duration_sec,
+                        VP_WATER_STATE, "Spray",
+                        &last_spray_time
+                    );
+
+                    xSemaphoreGive(xVPMutex);
+                }
+
+                // Handle boot flag (one-time operation)
+                if (on_boot) {
+                    on_boot = false;
+                    debug_println("[SYNC] Boot automation check completed");
+                }
+
+            } else {
+                debug_printf("[SYNC] Invalid time: %d:%d\n", raw_hours, raw_minutes);
+            }
+        }
+
+        // HMI Time Update (every 5 seconds)
+        if ((current_time - last_time_check) >= TIME_UPDATE_INTERVAL) {
+            last_time_check = current_time;
+
+            // Get current time
+            int raw_hours = timeClient.getHours();
+            int raw_minutes = timeClient.getMinutes();
             
-            // Get current time
-            uint16_t hours = (uint16_t)timeClient.getHours();
-            uint16_t minutes = (uint16_t)timeClient.getMinutes();
+            if (raw_hours >= 0 &&
+                raw_hours <= 23 &&
+                raw_minutes >= 0 &&
+                raw_minutes <= 59) {
+                uint16_t hours = (uint16_t)raw_hours;
+                uint16_t minutes = (uint16_t)raw_minutes;
 
-            if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-                // Light automation
-                if (vp.light_auto) {
-                    io_pin_trigger(
-                        vp.light_auto, vp.light_state,
-                        vp.light_on_hr, vp.light_on_min,
-                        vp.light_off_hr, vp.light_off_min,
-                        hours, minutes,
-                        GRACE_PERIOD_MIN, on_boot,
-                        VP_LIGHT_STATE, "Light"
-                    );
+                // Update data to display on HMI
+                if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
+                    char time[6] = {0};
+                    snprintf(time, sizeof(time), "%02u:%02u", hours, minutes);
+
+                    // Update only if changed
+                    const char* cur = vp_get_string(VP_TIME);
+                    if ((cur == NULL || strcmp(cur, time) != 0) &&
+                        time[0] != '\0') {
+                        vp_set_string(VP_TIME, time);
+                        vp_save_values();
+                        hmi_update_string(VP_TIME);
+                    }
+                    xSemaphoreGive(xVPMutex);
                 }
-
-                // Fan automation
-                if (vp.fan_auto) {
-                    io_pin_trigger(
-                        vp.fan_auto, vp.fan_state,
-                        vp.fan_on_hr, vp.fan_on_min,
-                        vp.fan_off_hr, vp.fan_off_min,
-                        hours, minutes,
-                        GRACE_PERIOD_MIN, on_boot,
-                        VP_FAN_STATE, "Fan"
-                    );
-                }
-
-                xSemaphoreGive(xVPMutex);
             }
-
-            // Run once after boot
-            if (on_boot) {
-                on_boot = false;
-                debug_println("[SYNC] Boot trigger check completed");
-            }
-
-            debug_println("[SYNC] Periodic trigger check (15 s)");
         }
 
-        // Periodic checks (every 10 seconds)
-        if ((current_time - last_sync) >= pdMS_TO_TICKS(10000)) {
-            last_sync = current_time;
-
-            // Get current time
-            uint16_t hours = (uint16_t)timeClient.getHours();
-            uint16_t minutes = (uint16_t)timeClient.getMinutes();
-
-            // Update data to display on HMI
-            if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-                String time = String(hours) + ":" +
-                              (minutes < 10 ? "0" : "") +
-                              String(minutes);
-
-                // Update only if changed
-                if (strcmp(vp_get_string(VP_TIME), time.c_str()) != 0 &&
-                    !time.isEmpty()
-                ) {
-                    vp_set_string(VP_TIME, time.c_str());
-                    vp_save_values();
-                    hmi_update_string(VP_TIME);
-                }
-                xSemaphoreGive(xVPMutex);
-            }
-
-            debug_println("[SYNC] Periodic update to HMI (10 s)");
-        }
-
-        // Shorter delay for more frequent checks
-        vTaskDelay(50 / portTICK_PERIOD_MS);
+        // Yield to other tasks
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

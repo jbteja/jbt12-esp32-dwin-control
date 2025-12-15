@@ -5,7 +5,7 @@ WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, NTP_SERVER);
 
 // === Device Configuration ===
-void io_init() {
+void io_init(void) {
     pinMode(LIGHT_RELAY, OUTPUT);
     pinMode(WATER_RELAY, OUTPUT);
     pinMode(FAN_RELAY, OUTPUT);
@@ -34,10 +34,10 @@ uint8_t io_pin_map(uint16_t address) {
 
 // === Timer-based trigger handling ===
 /**
- * @brief Handles relay trigger with two modes controlled by a flag.
+ * @brief Trigger relay based on current time and schedule and Only updates if
+ * the state needs to change.
  * @note This function is stateless and determines the desired state
  * based on the current time. Only trigger if its inside the grace period.
- * 
  * @param on_boot If false, the function performs a robust, stateless
  * check to correct the relay's state.
  */
@@ -59,6 +59,8 @@ void io_pin_trigger(
     uint16_t off_total_mins = off_hr * 60 + off_min;
     uint16_t total_mins = current_hr * 60 + current_min;
 
+    uint8_t desired_state = current_state;
+
     if (!on_boot) {
         // Normal operation mode - Check within grace period
         uint16_t minutes_since_on = 
@@ -66,28 +68,16 @@ void io_pin_trigger(
         uint16_t minutes_since_off = 
             (total_mins - off_total_mins + MINUTES_IN_DAY) % MINUTES_IN_DAY;
 
-        // Check ON trigger within grace period
+        // Determine desired state based on grace periods
         if (!current_state && (minutes_since_on < grace_min)) {
-            debug_printf("[SYNC] Auto %s ON triggered\n", relay_str);
-            vp_set_value(address, 1);
-            vp_save_values();
-            hmi_update_value(address);
-            return;
-        }
+            desired_state = 1; // Should be ON
 
-        // Check OFF trigger within grace period
-        if (current_state && (minutes_since_off < grace_min)) {
-            debug_printf("[SYNC] Auto %s OFF triggered\n", relay_str);
-            vp_set_value(address, 0);
-            vp_save_values();
-            hmi_update_value(address);
-            return;
+        } else if (current_state && (minutes_since_off < grace_min)) {
+            desired_state = 0; // Should be OFF
         }
 
     } else {
         // Boot-up mode - Correct state based on schedule
-        bool desired_state = false;
-
         if (on_total_mins < off_total_mins) {
             // Same-day schedule (e.g., ON 09:00, OFF 18:00)
             desired_state = ((total_mins >= on_total_mins) &&
@@ -98,22 +88,24 @@ void io_pin_trigger(
             desired_state = ((total_mins >= on_total_mins) ||
                              (total_mins < off_total_mins));
         }
+    }
 
-        // Update state if it doesn't match the schedule
-        if (current_state != desired_state) {
-            debug_printf("[SYNC] Auto %s %s triggered (boot)\n", 
-                        relay_str, desired_state ? "ON" : "OFF");
-            vp_set_value(address, desired_state);
-            vp_save_values();
-            hmi_update_value(address);
-        }
+    // Only update if state actually needs to change
+    if (current_state != desired_state) {
+        debug_printf("[SYNC] Auto %s %s triggered%s\n", 
+                    relay_str, desired_state ? "ON" : "OFF",
+                    on_boot ? " (boot)" : "");
+        
+        vp_set_value(address, desired_state);
+        vp_save_values();
+        hmi_update_value(address);
     }
 }
 
-
 // === Water spray trigger handling ===
 /**
- * @brief Handles water spray trigger with interval-based control
+ * @brief Handles water spray trigger with interval-based control and
+ * Only updates if the state needs to change.
  */
 void io_pin_trigger_interval_based(
     uint8_t enable, uint8_t current_state,
@@ -136,7 +128,7 @@ void io_pin_trigger_interval_based(
 
     // Check if we're within the water spray schedule
     bool in_schedule = false;
-    
+
     if (on_total_mins < off_total_mins) {
         // Same-day schedule
         in_schedule = ((total_mins >= on_total_mins) &&
@@ -148,72 +140,65 @@ void io_pin_trigger_interval_based(
                        (total_mins < off_total_mins));
     }
 
-    if (!in_schedule) {
-        // Outside spray schedule - turn off if currently on
-        if (current_state != 0) {
-            debug_printf("[SYNC] Auto %s OFF triggered\n", relay_str);
-            vp_set_value(address, 0);
-            vp_save_values();
-            hmi_update_value(address);
-            *last_spray = 0; // Reset spray timer
-        }
-        return;
-    }
+    uint8_t desired_state = current_state;
 
-    // Calculate current time in seconds since midnight for precise timing
-    uint32_t current_time_sec = (current_hr * 3600) + (current_min * 60);
-    uint32_t interval_sec = interval_hr * 60;
-    //uint32_t interval_sec = interval_hr * 3600;
-    
-    // Check if it's time to spray
-    if (*last_spray == 0) {
-        // First spray - initialize and start immediately
-        *last_spray = current_time_sec;
-        if (current_state != 1) {
-            debug_printf("[SYNC] Auto %s ON triggered (first)\n", relay_str);
-            vp_set_value(address, 1);
-            vp_save_values();
-            hmi_update_value(address);
+    if (!in_schedule) {
+        // Outside spray schedule - desired state is OFF
+        desired_state = 0;
+
+        // Reset spray timer when outside schedule
+        if (*last_spray != 0) {
+            *last_spray = 0;
+            debug_printf("[SYNC] Auto %s timer reset!\n", relay_str);
         }
 
     } else {
-        // Calculate time since last spray started
-        uint32_t time_since_last_spray;
+        // Inside schedule - calculate desired state based on timing
+        uint32_t current_time_sec = (current_hr * 3600) + (current_min * 60);
+        uint32_t interval_sec = interval_hr * 3600;
         
-        if (current_time_sec >= *last_spray) {
-            time_since_last_spray = current_time_sec - *last_spray;
+        if (*last_spray == 0) {
+            // First spray - should be ON
+            desired_state = 1;
+            *last_spray = current_time_sec;
 
         } else {
-            // Handle midnight rollover
-            time_since_last_spray = (86400 - *last_spray) + current_time_sec;
-        }
+            // Calculate time since last spray started
+            uint32_t time_since_last_spray;
+            
+            if (current_time_sec >= *last_spray) {
+                time_since_last_spray = current_time_sec - *last_spray;
 
-        if (current_state == 1) {
-            // Currently spraying - check if duration is complete
-            if (time_since_last_spray >= duration_sec) {
-                debug_printf(
-                    "[SYNC] Auto OFF, %s duration complete)\n",
-                    relay_str
-                );
-                vp_set_value(address, 0);
-                vp_save_values();
-                hmi_update_value(address);
-                *last_spray = current_time_sec; // Reset for next interval
+            } else {
+                // Handle midnight rollover
+                time_since_last_spray = (86400 - *last_spray) + current_time_sec;
             }
 
-        } else {
-            // Not spraying - check if interval has passed
-            if (time_since_last_spray >= interval_sec) {
-                debug_printf(
-                    "[SYNC] Auto ON, %s interval reached)\n",
-                    relay_str
-                );
-                vp_set_value(address, 1);
-                vp_save_values();
-                hmi_update_value(address);
-                *last_spray = current_time_sec;
+            if (current_state == 1) {
+                // Currently spraying - check if duration is complete
+                if (time_since_last_spray >= duration_sec) {
+                    desired_state = 0; // Should turn OFF
+                    *last_spray = current_time_sec; // Reset for next interval
+                }
+
+            } else {
+                // Not spraying - check if interval has passed
+                if (time_since_last_spray >= interval_sec) {
+                    desired_state = 1; // Should turn ON
+                    *last_spray = current_time_sec; // Reset spray start time
+                }
             }
         }
+    }
+
+    // Only update if state actually needs to change
+    if (current_state != desired_state) {
+        debug_printf("[SYNC] Auto %s %s triggered\n", 
+                    relay_str, desired_state ? "ON" : "OFF");
+        
+        vp_set_value(address, desired_state);
+        vp_save_values();
+        hmi_update_value(address);
     }
 }
 
@@ -264,8 +249,52 @@ void ntp_client_update(bool force) {
     }
 }
 
+// === Ordinal Suffix Helper ===
+const char *ordinal(uint16_t n) {
+    if ((n % 100) >= 11 && (n % 100) <= 13) {
+        return "th";
+    }
+
+    switch (n % 10) {
+        case 1:
+            return "st";
+        case 2:
+            return "nd";
+        case 3:
+            return "rd";
+        default:
+            return "th";
+    }
+}
+
+// === Growth & Progress Update ===
+void vp_growth_bar_update(void) {
+    uint8_t bar = 1; 
+    if (vp.total_cycle > 0) {
+        // Progress is segmented into 20 parts (1-20)
+        bar = (uint8_t)round((vp.growth_day / (float)vp.total_cycle) * 20.0f);
+        if (bar < 1) bar = 1;
+        if (bar > 20) bar = 20;
+        vp.growth_bar = bar;
+
+        // Cap at 99 days for display
+        if (vp.growth_day > 99) {
+            vp.growth_day = 99;
+        }
+        
+        snprintf(
+            vp.growth_str,
+            sizeof(vp.growth_str),
+            "%d%s",
+            vp.growth_day,
+            ordinal(vp.growth_day)
+        );
+        vp_sync_item(VP_GROWTH_STR, &vp.growth_str);
+    }
+}
+
 // === HMI Initialization ===
-void hmi_init() {
+void hmi_init(void) {
     debug_println("[BOOT] Initializing DWIN HMI");
     hmi_update_all();
 }
@@ -295,19 +324,9 @@ void hmi_on_event(String address, int data, String message, String response) {
             switch (vp_addr) {
                 case VP_TOTAL_CYCLE:
                 case VP_GROWTH_DAY: {
-                    uint8_t bar = 1; // Calculate growth bar (1-20)
-                    if (vp.total_cycle > 0) {
-                        bar = (uint8_t)round((vp.growth_day / (float)vp.total_cycle) * 20.0f);
-                        if (bar < 1) bar = 1;
-                        if (bar > 20) bar = 20;
-                    }
-                    vp.growth_bar = bar;
+                    vp_growth_bar_update();
                     hmi_update_value(VP_GROWTH_BAR);
-
-                    snprintf(vp.growth_str, sizeof(vp.growth_str), "%d/%d", vp.growth_day, vp.total_cycle);
                     hmi_update_string(VP_GROWTH_STR);
-
-                    vp_save_values();
                     break;
                 }
 
