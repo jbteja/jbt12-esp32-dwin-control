@@ -51,3 +51,6 @@ env.*
 # Windows image file cache
 ehthumbs.db
 Icon?
+
+# Ignore Assigned Device ID file
+devices.json

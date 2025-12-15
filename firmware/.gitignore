@@ -6,5 +6,15 @@
 .vscode/launch.json
 .vscode/ipch
 
-# Ignore Assigned Device ID file
-devices.json
+# PlatformIO
+.pio/
+.pioenvs/
+*.bin
+*.elf
+*.map
+*.hex
+*.app
+
+# C/C++ build artifacts
+*.a
+*.so

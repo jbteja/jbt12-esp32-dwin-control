@@ -16,7 +16,7 @@ testing.
 
 ## Hardware & Wiring
 
-- DWIN UART (RX2/TX2) - ESP32 `Serial2` (`RX = GPIO16`, `TX = GPIO17`)
+- DWIN UART (RX2/TX2) - ESP32 `Serial2` (`RX = GPIO16`, `TX = GPIO17`).
 - Default baud for DWIN communication: 115200 (see `DGUS_BAUD` in firmware).
 - Always share a common ground (connect the GND of the ESP32 and the DWIN display).
 - Since we are using the existing hardware board, a custom connector must be created to connect the display to the ESP32 controller board.
@@ -89,7 +89,7 @@ level shifter is recommended for production or noisy environments.
 
 ## Recommended Protections
 
-- 10 µF electrolytic: bulk filtering on 5V rail
-- 100 nF ceramic: local decoupling near power pins
-- 220 Ω series resistors: optional current limiting on TX lines
-- 3.6 V Zener (optional): over-voltage clamp on ESP32 RX input
+- A 10 µF electrolytic capacitor provides bulk filtering on the 5 V rail.
+- A 100 nF ceramic capacitor provides local decoupling near the power pins.
+- Optional 220 Ω series resistors can be used for current limiting on TX lines.
+- An optional 3.6 V Zener diode can be used to clamp over-voltage on the ESP32 RX input.
