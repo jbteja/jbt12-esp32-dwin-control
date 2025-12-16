@@ -49,9 +49,9 @@ void io_pin_trigger_interval(
     uint8_t on_hr, uint8_t on_min,
     uint8_t off_hr, uint8_t off_min,
     uint16_t current_hr, uint16_t current_min,
-    uint16_t interval_hr, uint16_t duration_sec,
-    uint16_t address, const char *relay_str,
-    uint32_t *last_spray
+    uint16_t current_sec, uint16_t interval_hr,
+    uint16_t duration_sec, uint16_t address, 
+    const char *relay_str, uint32_t *last_spray
 );
 
 void ntp_client_init(void);

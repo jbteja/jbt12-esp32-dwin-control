@@ -34,8 +34,8 @@ uint8_t io_pin_map(uint16_t address) {
 
 // === Timer-based trigger handling ===
 /**
- * @brief Trigger relay based on current time and schedule and Only updates if
- * the state needs to change.
+ * @brief Trigger relay based on current time and schedule and Only
+ * updates if the state needs to change.
  * @note This function is stateless and determines the desired state
  * based on the current time. Only trigger if its inside the grace period.
  * @param on_boot If false, the function performs a robust, stateless
@@ -53,15 +53,16 @@ void io_pin_trigger(
         return; // Automation is disabled
     }
 
-    // Convert all times to total minutes for easier comparison
+    uint8_t desired_state = current_state;
     const uint16_t MINUTES_IN_DAY = 24 * 60;
     uint16_t on_total_mins = on_hr * 60 + on_min;
     uint16_t off_total_mins = off_hr * 60 + off_min;
     uint16_t total_mins = current_hr * 60 + current_min;
+    
+    if (on_total_mins == off_total_mins) {
+        return; // Skip if condition is invalid
 
-    uint8_t desired_state = current_state;
-
-    if (!on_boot) {
+    } else if (!on_boot) {
         // Normal operation mode - Check within grace period
         uint16_t minutes_since_on = 
             (total_mins - on_total_mins + MINUTES_IN_DAY) % MINUTES_IN_DAY;
@@ -69,10 +70,10 @@ void io_pin_trigger(
             (total_mins - off_total_mins + MINUTES_IN_DAY) % MINUTES_IN_DAY;
 
         // Determine desired state based on grace periods
-        if (!current_state && (minutes_since_on < grace_min)) {
+        if (!current_state && (minutes_since_on <= grace_min)) {
             desired_state = 1; // Should be ON
 
-        } else if (current_state && (minutes_since_off < grace_min)) {
+        } else if (current_state && (minutes_since_off <= grace_min)) {
             desired_state = 0; // Should be OFF
         }
 
@@ -107,29 +108,42 @@ void io_pin_trigger(
  * @brief Handles water spray trigger with interval-based control and
  * Only updates if the state needs to change.
  */
-void io_pin_trigger_interval_based(
+void io_pin_trigger_interval(
     uint8_t enable, uint8_t current_state,
     uint8_t on_hr, uint8_t on_min,
     uint8_t off_hr, uint8_t off_min,
     uint16_t current_hr, uint16_t current_min,
-    uint16_t interval_hr, uint16_t duration_sec,
-    uint16_t address, const char *relay_str,
-    uint32_t *last_spray  // Persistent
+    uint16_t current_sec, uint16_t interval_hr,
+    uint16_t duration_sec, uint16_t address, 
+    const char *relay_str, uint32_t *last_spray  // Persistent
 ) {
     if (!enable) {
         return; // Automation is disabled
     }
 
-    // Convert all times to total minutes for easier comparison
+    if (duration_sec < 1 || duration_sec > 99) {
+        debug_printf(
+            "[SYNC] Error %s duration must be 1-99 seconds\n", relay_str);
+        return;
+    }
+
+    if (interval_hr < 1 || interval_hr > 12) {
+        debug_printf(
+            "[SYNC] Error %s interval must be 1-12 hours\n", relay_str);
+        return;
+    }
+    
+    bool in_schedule = false;
     const uint16_t MINUTES_IN_DAY = 24 * 60;
     uint16_t on_total_mins = on_hr * 60 + on_min;
     uint16_t off_total_mins = off_hr * 60 + off_min;
     uint16_t total_mins = current_hr * 60 + current_min;
+    
+    if (on_total_mins == off_total_mins) {
+        // ON==OFF -> treat as disabled schedule
+        in_schedule = false;
 
-    // Check if we're within the water spray schedule
-    bool in_schedule = false;
-
-    if (on_total_mins < off_total_mins) {
+    } else if (on_total_mins < off_total_mins) {
         // Same-day schedule
         in_schedule = ((total_mins >= on_total_mins) &&
                        (total_mins < off_total_mins));
@@ -154,7 +168,8 @@ void io_pin_trigger_interval_based(
 
     } else {
         // Inside schedule - calculate desired state based on timing
-        uint32_t current_time_sec = (current_hr * 3600) + (current_min * 60);
+        uint32_t current_time_sec = 
+            (current_hr * 3600) + (current_min * 60) + current_sec;
         uint32_t interval_sec = interval_hr * 3600;
         
         if (*last_spray == 0) {

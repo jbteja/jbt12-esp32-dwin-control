@@ -394,14 +394,18 @@ void TaskSync(void *pvParameters) {
             // Get current time
             int raw_hours = timeClient.getHours();
             int raw_minutes = timeClient.getMinutes();
+            int raw_seconds = timeClient.getSeconds();
 
             // Validate time before proceeding
             if (raw_hours >= 0 && 
                 raw_hours <= 23 && 
                 raw_minutes >= 0 && 
-                raw_minutes <= 59) {
+                raw_minutes <= 59 &&
+                raw_seconds >= 0 &&
+                raw_seconds <= 59) {
                 uint16_t hours = (uint16_t)raw_hours;
                 uint16_t minutes = (uint16_t)raw_minutes;
+                uint16_t seconds = (uint16_t)raw_seconds;
 
                 // Only run once per minute
                 if ((minutes != last_auto_minute) && 
@@ -438,11 +442,11 @@ void TaskSync(void *pvParameters) {
                 // Spray automation runs every cycle
                 if (vp.water_auto &&
                     xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-                    io_pin_trigger_interval_based(
+                    io_pin_trigger_interval(
                         vp.water_auto, vp.water_state,
                         vp.water_on_hr, vp.water_on_min,
                         vp.water_off_hr, vp.water_off_min,
-                        hours, minutes,
+                        hours, minutes, seconds,
                         vp.water_interval_hr, vp.water_duration_sec,
                         VP_WATER_STATE, "Spray",
                         &last_spray_time
