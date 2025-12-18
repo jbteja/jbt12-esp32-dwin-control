@@ -4,6 +4,24 @@ extern DWIN hmi;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, NTP_SERVER);
 
+// === Ordinal Suffix Helper ===
+const char *ordinal(uint16_t n) {
+    if ((n % 100) >= 11 && (n % 100) <= 13) {
+        return "th";
+    }
+
+    switch (n % 10) {
+        case 1:
+            return "st";
+        case 2:
+            return "nd";
+        case 3:
+            return "rd";
+        default:
+            return "th";
+    }
+}
+
 // === Device Configuration ===
 void io_init(void) {
     pinMode(LIGHT_RELAY, OUTPUT);
@@ -93,7 +111,7 @@ void io_pin_trigger(
 
     // Only update if state actually needs to change
     if (current_state != desired_state) {
-        debug_printf("[SYNC] Auto %s %s triggered%s\n", 
+        debug_printf("[SYNC] Triggered auto %s %s%s\n", 
                     relay_str, desired_state ? "ON" : "OFF",
                     on_boot ? " (boot)" : "");
         
@@ -208,7 +226,7 @@ void io_pin_trigger_interval(
 
     // Only update if state actually needs to change
     if (current_state != desired_state) {
-        debug_printf("[SYNC] Auto %s %s triggered\n", 
+        debug_printf("[SYNC] Triggered auto %s %s\n", 
                     relay_str, desired_state ? "ON" : "OFF");
         
         vp_set_value(address, desired_state);
@@ -226,60 +244,63 @@ void ntp_client_init(void) {
 
 // === NTP Client Update ===
 void ntp_client_update(bool force) {
-    static uint8_t retry_count = 0;
     const uint8_t MAX_RETRIES = 3;
+    const uint32_t RETRY_DELAY_MS = 1000;
+    const uint32_t MAX_RETRY_DELAY_MS = 6000;
     
-    if(force || !timeClient.isTimeSet() || retry_count < MAX_RETRIES) {
-        debug_println("[NTP] Time not set, Calling forceUpdate");
-        timeClient.forceUpdate();
+    // If time is already synced and no force update, skip
+    if (timeClient.isTimeSet() && !force) {
+        timeClient.update();
+        // debug_printf("[NTP] Time sync maintained: %s\n", 
+        //             timeClient.getFormattedTime().c_str());
+        return;
+    }
+    
+    debug_println("[NTP] Time not in sync, calling forceUpdate!");
+    
+    
+    // Blocking call, be careful with delays
+    for (uint8_t attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        // Calculate exponential backoff delay
+        uint32_t retry_delay_ms = RETRY_DELAY_MS * (1 << (attempt - 1));
+        if (retry_delay_ms > MAX_RETRY_DELAY_MS) {
+            retry_delay_ms = MAX_RETRY_DELAY_MS;
+        }
         
-        // Wait a bit for the update to complete
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        debug_printf(
+            "[NTP] Updating time from server failed (attempt %d/%d)\n",
+            attempt,
+            MAX_RETRIES
+        );
         
-        if(timeClient.isTimeSet()) {
-            debug_printf(
-                "[NTP] Time successfully set: %s\n",
-                timeClient.getFormattedTime().c_str()
-            );
-            retry_count = 0; // Reset retry counter on success
-
-        } else {
-            retry_count++;
-            debug_printf(
-                "[NTP] WARNING: Time update failed (attempt %d/%d)\n",
-                retry_count,
-                MAX_RETRIES
-            );
+        // Try to update
+        if (timeClient.forceUpdate()) {
+            // Give it time to complete
+            vTaskDelay(pdMS_TO_TICKS(500));
             
-            if(retry_count >= MAX_RETRIES) {
-                debug_println("[NTP] Maximum retries reached, giving up!!");
+            if (timeClient.isTimeSet()) {
+                debug_printf("[NTP] Time successfully set: %s\n",
+                            timeClient.getFormattedTime().c_str());
+                return; // Success
             }
         }
-    } else {
-        timeClient.update();
-        debug_printf(
-            "[NTP] Current time: %s\n",
-            timeClient.getFormattedTime().c_str()
-        );
+        
+        // If this wasn't the last attempt, wait before retrying
+        if (attempt < MAX_RETRIES) {
+            debug_printf("[NTP] Update failed, retrying in %lu ms\n", retry_delay_ms);
+            vTaskDelay(pdMS_TO_TICKS(retry_delay_ms));
+        }
     }
+    
+    // All retries failed
+    debug_println("[NTP] Error: Maximum attempt reached, giving up!!");
 }
 
-// === Ordinal Suffix Helper ===
-const char *ordinal(uint16_t n) {
-    if ((n % 100) >= 11 && (n % 100) <= 13) {
-        return "th";
-    }
-
-    switch (n % 10) {
-        case 1:
-            return "st";
-        case 2:
-            return "nd";
-        case 3:
-            return "rd";
-        default:
-            return "th";
-    }
+// === Time Validation Helper ===
+bool is_valid_time(int hours, int minutes, int seconds) {
+    return (hours >= 0 && hours <= 23 &&
+            minutes >= 0 && minutes <= 59 &&
+            seconds >= 0 && seconds <= 59);
 }
 
 // === Growth & Progress Update ===
@@ -339,11 +360,61 @@ void hmi_on_event(String address, int data, String message, String response) {
             switch (vp_addr) {
                 case VP_TOTAL_CYCLE:
                 case VP_GROWTH_DAY: {
+                    // Prevent division by zero
+                    if (vp.total_cycle < 1) {
+                        vp.total_cycle = 1;
+                        vp_sync_item(VP_TOTAL_CYCLE, &vp.total_cycle);
+                    }
+                    if (vp.growth_day < 1) {
+                        vp.growth_day = 1;
+                        vp_sync_item(VP_GROWTH_DAY, &vp.growth_day);
+
+                    }
+
                     vp_growth_bar_update();
                     hmi_update_value(VP_GROWTH_BAR);
                     hmi_update_string(VP_GROWTH_STR);
                     break;
                 }
+
+                case VP_WATER_INTERVAL_HR: {
+                    if (vp.water_interval_hr < 1) {
+                        vp.water_interval_hr = 1;
+                        vp_sync_item(VP_WATER_INTERVAL_HR, &vp.water_interval_hr);
+
+                    } else if (vp.water_interval_hr > 12) {
+                        vp.water_interval_hr = 12;
+                        vp_sync_item(VP_WATER_INTERVAL_HR, &vp.water_interval_hr);
+                    }
+                    break;
+                }
+
+                case VP_WATER_DURATION_SEC: {
+                    if (vp.water_duration_sec < 1) {
+                        vp.water_duration_sec = 1;
+                        vp_sync_item(VP_WATER_DURATION_SEC, &vp.water_duration_sec);
+
+                    } else if (vp.water_duration_sec > 99) {
+                        vp.water_duration_sec = 99;
+                        vp_sync_item(VP_WATER_DURATION_SEC, &vp.water_duration_sec);
+                    }
+                    break;
+                }
+
+                case VP_LIGHT_AUTO:
+                    debug_print("[HMI] Light auto setting changed to ");
+                    debug_println(vp.light_auto ? "ENABLED" : "DISABLED");
+                    break;
+
+                case VP_WATER_AUTO:
+                    debug_print("[HMI] Spray auto setting changed to ");
+                    debug_println(vp.water_auto ? "ENABLED" : "DISABLED");
+                    break;
+
+                case VP_FAN_AUTO:
+                    debug_print("[HMI] Fan auto setting changed to ");
+                    debug_println(vp.fan_auto ? "ENABLED" : "DISABLED");
+                    break;
 
                 case VP_LIGHT_STATE:
                     hmi_update_value(VP_LIGHT_STATE);

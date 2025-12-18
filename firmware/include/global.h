@@ -8,7 +8,7 @@
 
 // === Device Configuration ===
 #define UI_VERSION "v1.0.8"
-#define FW_VERSION "v1.0.5"
+#define FW_VERSION "v1.0.9"
 #define HW_VERSION "v1.0.0"
 
 // === Debugging Macros ===

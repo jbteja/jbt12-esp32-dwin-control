@@ -41,6 +41,7 @@ void setup() {
         // Set defaults if empty or changed
         vp_set_string(VP_IP_ADDRESS, "0.0.0.0");
         vp_set_string(VP_PSWD_AND_SIGNAL, "Disconnected");
+        vp_set_string(VP_TIME, "00:00");
 
         // Hostname when not set during production
         if (strlen(vp.hostname) == 0) {
@@ -119,8 +120,9 @@ void setup() {
 
     // Print initial values
     debug_printf("[BOOT] Hostname: %s\n", vp.hostname);
-    debug_printf("[BOOT] HW Version: %s\n", vp.hw_version);
+    debug_printf("[BOOT] UI Version: %s\n", vp.ui_version);
     debug_printf("[BOOT] FW Version: %s\n", vp.fw_version);
+    debug_printf("[BOOT] HW Version: %s\n", vp.hw_version);
     debug_printf(
         "[BOOT] WiFi STA: %d, AP: %d\n",
         vp.wifi_state,

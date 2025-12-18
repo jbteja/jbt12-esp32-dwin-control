@@ -369,25 +369,27 @@ void TaskWiFi(void *pvParameters) {
 // === Scheduler / Sync Task ===
 void TaskSync(void *pvParameters) {
     debug_printf("[SYNC] Task started on core %d\n", xPortGetCoreID());
-    
-    static TickType_t current_time;
+
+    // Constants
+    const uint16_t GRACE_PERIOD_MIN = 1;  // Error grace period in minutes
+    const TickType_t AUTOMATION_INTERVAL = pdMS_TO_TICKS(500); // 500 ms
+    const TickType_t TIME_UPDATE_INTERVAL = pdMS_TO_TICKS(5000); // 5 secs
+    const TickType_t TASK_YIELD_DELAY = pdMS_TO_TICKS(50); // 50 ms
+
+    // State variables
     static bool on_boot = true;
     static uint32_t last_spray_time = 0;
-    const uint16_t grace_period_min = 1; // Error grace period
-    
+
     // Timer tracking for periodic operations
+    static TickType_t current_time;
     static TickType_t last_auto_check = 0;
     static TickType_t last_time_check = 0;
-    static uint16_t last_auto_minute = -1;
-    
-    // Run automation checks more frequently for lower latency
-    const TickType_t AUTOMATION_INTERVAL = pdMS_TO_TICKS(500);    // 500 ms
-    const TickType_t TIME_UPDATE_INTERVAL = pdMS_TO_TICKS(5000);   // 5 secs
+    static uint16_t last_auto_minute = UINT16_MAX;
 
     for (;;) {
         current_time = xTaskGetTickCount();
 
-        // Automation Checks (every interval)
+        // Automation checks (every interval)
         if ((current_time - last_auto_check) >= AUTOMATION_INTERVAL) {
             last_auto_check = current_time;
 
@@ -397,21 +399,20 @@ void TaskSync(void *pvParameters) {
             int raw_seconds = timeClient.getSeconds();
 
             // Validate time before proceeding
-            if (raw_hours >= 0 && 
-                raw_hours <= 23 && 
-                raw_minutes >= 0 && 
-                raw_minutes <= 59 &&
-                raw_seconds >= 0 &&
-                raw_seconds <= 59) {
+            if (is_valid_time(raw_hours, raw_minutes, raw_seconds)) {
                 uint16_t hours = (uint16_t)raw_hours;
                 uint16_t minutes = (uint16_t)raw_minutes;
                 uint16_t seconds = (uint16_t)raw_seconds;
 
-                // Only run once per minute
-                if ((minutes != last_auto_minute) && 
-                    (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE)) {
-                    last_auto_minute = minutes;
+                // Take mutex for shared resource access
+                if (xSemaphoreTake(xVPMutex, portMAX_DELAY) != pdTRUE) {
+                    debug_println(
+                        "[SYNC] Failed to acquire mutex, yielding task");
+                    goto yield_task_sync;
+                }
 
+                // Handle per-minute automation
+                if (minutes != last_auto_minute) {
                     // Light automation
                     if (vp.light_auto) {
                         io_pin_trigger(
@@ -419,7 +420,7 @@ void TaskSync(void *pvParameters) {
                             vp.light_on_hr, vp.light_on_min,
                             vp.light_off_hr, vp.light_off_min,
                             hours, minutes,
-                            grace_period_min, on_boot,
+                            GRACE_PERIOD_MIN, on_boot,
                             VP_LIGHT_STATE, "Light"
                         );
                     }
@@ -431,17 +432,39 @@ void TaskSync(void *pvParameters) {
                             vp.fan_on_hr, vp.fan_on_min,
                             vp.fan_off_hr, vp.fan_off_min,
                             hours, minutes,
-                            grace_period_min, on_boot,
+                            GRACE_PERIOD_MIN, on_boot,
                             VP_FAN_STATE, "Fan"
                         );
                     }
 
-                    xSemaphoreGive(xVPMutex);
+                    // Growth day increment at midnight
+                    if ((!on_boot) &&
+                        hours == 0 &&
+                        minutes == 0 &&
+                        last_auto_minute != 0
+                    ) {
+                        vp.growth_day++;
+
+                        // Update shared variables and HMI
+                        snprintf(
+                            vp.growth_str,
+                            sizeof(vp.growth_str), 
+                            "%u", vp.growth_day
+                        );
+                        vp_sync_item(VP_GROWTH_DAY, &vp.growth_day);
+                        vp_growth_bar_update();
+                        hmi_update_value(VP_GROWTH_BAR);
+                        hmi_update_string(VP_GROWTH_STR);
+                        debug_printf(
+                            "[SYNC] Growth day incremented to %u\n",
+                            vp.growth_day);
+                    }
+                    
+                    last_auto_minute = minutes;
                 }
 
                 // Spray automation runs every cycle
-                if (vp.water_auto &&
-                    xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
+                if (vp.water_auto) {
                     io_pin_trigger_interval(
                         vp.water_auto, vp.water_state,
                         vp.water_on_hr, vp.water_on_min,
@@ -451,9 +474,10 @@ void TaskSync(void *pvParameters) {
                         VP_WATER_STATE, "Spray",
                         &last_spray_time
                     );
-
-                    xSemaphoreGive(xVPMutex);
                 }
+                
+                // Release mutex after operations
+                xSemaphoreGive(xVPMutex);
 
                 // Handle boot flag (one-time operation)
                 if (on_boot) {
@@ -473,20 +497,17 @@ void TaskSync(void *pvParameters) {
             // Get current time
             int raw_hours = timeClient.getHours();
             int raw_minutes = timeClient.getMinutes();
-            
-            if (raw_hours >= 0 &&
-                raw_hours <= 23 &&
-                raw_minutes >= 0 &&
-                raw_minutes <= 59) {
+
+            if (is_valid_time(raw_hours, raw_minutes, 0)) {
                 uint16_t hours = (uint16_t)raw_hours;
                 uint16_t minutes = (uint16_t)raw_minutes;
 
-                // Update data to display on HMI
-                if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
-                    char time[6] = {0};
-                    snprintf(time, sizeof(time), "%02u:%02u", hours, minutes);
+                // Format time string
+                char time[6] = {0};
+                snprintf(time, sizeof(time), "%02u:%02u", hours, minutes);
 
-                    // Update only if changed
+                // Update only if changed to display on HMI
+                if (xSemaphoreTake(xVPMutex, portMAX_DELAY) == pdTRUE) {
                     const char* cur = vp_get_string(VP_TIME);
                     if ((cur == NULL || strcmp(cur, time) != 0) &&
                         time[0] != '\0') {
@@ -499,7 +520,7 @@ void TaskSync(void *pvParameters) {
             }
         }
 
-        // Yield to other tasks
+        yield_task_sync:
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

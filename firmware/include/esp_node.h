@@ -21,7 +21,7 @@
 extern NTPClient timeClient;
 #define NTP_SERVER "asia.pool.ntp.org"
 #define NTP_OFFSET 19800 // UTC+5:30
-#define NTP_UPDATE_INTERVAL 30*60*1000 // 30 mins
+#define NTP_UPDATE_INTERVAL 10*60*1000 // 10 mins
 
 // === Pin Mapping ===
 #define LIGHT_RELAY 23
@@ -56,7 +56,9 @@ void io_pin_trigger_interval(
 
 void ntp_client_init(void);
 void ntp_client_update(bool force = false);
+bool is_valid_time(int hours, int minutes, int seconds);
 void vp_growth_bar_update(void);
+
 void hmi_init(void);
 void hmi_on_event(String address, int data, String message, String response);
 
