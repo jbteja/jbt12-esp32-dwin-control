@@ -90,7 +90,7 @@ void setup() {
             vp.water_on_min = 0;
             vp.water_off_hr = 18;
             vp.water_off_min = 0;
-            vp.water_interval_hr = 3;
+            vp.water_interval_hr = 1;
             vp.water_duration_sec = 30;
         }
 
