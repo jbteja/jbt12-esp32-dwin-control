@@ -93,3 +93,11 @@ level shifter is recommended for production or noisy environments.
 - A 100 nF ceramic capacitor provides local decoupling near the power pins.
 - Optional 220 Ω series resistors can be used for current limiting on TX lines.
 - An optional 3.6 V Zener diode can be used to clamp over-voltage on the ESP32 RX input.
+
+## HMI Display – [SD Card Instructions](dwin_ui/README.md)
+
+See the DWIN display SD card download instructions for step-by-step guidance on:
+
+- Preparing the SD card (FAT32, 4096-byte allocation)
+- Copying the `DWIN_SET` folder
+- Downloading files to a DWIN HMI display

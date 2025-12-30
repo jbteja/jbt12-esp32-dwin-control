@@ -1,0 +1,5 @@
+release_type: stable
+
+components:
+  ui: v1.0.8
+  firmware: v1.0.9
