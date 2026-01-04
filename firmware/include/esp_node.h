@@ -34,6 +34,9 @@ extern NTPClient timeClient;
 extern "C" {
 #endif
 
+const char *ordinal(uint16_t n);
+void get_mac(char *out, size_t out_len);
+
 void io_init();
 uint8_t io_pin_map(uint16_t address);
 void io_pin_trigger(

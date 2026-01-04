@@ -176,6 +176,38 @@ void setup() {
 
     debug_println("[BOOT] Tasks created. Setup complete!");
 
+    const uint32_t CMD_TIMEOUT = 15000; // 15s timeout
+    uint32_t start = millis();
+
+    debug_println("[CMD] Starting serial config listener");
+    while (millis() - start < CMD_TIMEOUT) {
+        if (Serial && Serial.available()) {
+            String cmd = Serial.readStringUntil('\n');
+            cmd.trim();
+            if (cmd.equalsIgnoreCase("GET_MAC")) {
+                // Provisioning system will read this
+                debug_print("[CMD] MAC:");
+                char mac_str[18];
+                get_mac(mac_str, sizeof(mac_str));
+                debug_println(mac_str);
+
+            } else if (cmd.equalsIgnoreCase("GET_HOSTNAME")) {
+                // Provisioning system will read this
+                debug_printf("[CMD] HOSTNAME:%s\n", vp.hostname);
+
+            } else if (cmd.equalsIgnoreCase("RESET")) {
+                debug_println("[CMD] Restarting device...");
+                delay(500);
+                ESP.restart();
+
+            } else if (cmd.length() > 0) {
+                debug_printf("[CMD] Unknown command: %s\n", cmd.c_str());
+            }
+        }
+        delay(10);
+    }
+    // debug_println("[CMD] Timeout reached. Continuing.");
+
     // Delete the setup task as it's no longer needed
     vTaskDelete(NULL);
 }

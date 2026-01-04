@@ -55,3 +55,5 @@ Icon?
 
 # Ignore Assigned Device ID file
 devices.json
+device_db.json
+devices_db.json

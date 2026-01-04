@@ -22,6 +22,17 @@ const char *ordinal(uint16_t n) {
     }
 }
 
+// === MAC Address Retrieval ===
+void get_mac(char *out, size_t out_len) {
+    uint8_t base_mac[6];
+    esp_efuse_mac_get_default(base_mac);
+
+    snprintf(out, out_len,
+             "%02X:%02X:%02X:%02X:%02X:%02X",
+             base_mac[0], base_mac[1], base_mac[2],
+             base_mac[3], base_mac[4], base_mac[5]);
+}
+
 // === Device Configuration ===
 void io_init(void) {
     pinMode(LIGHT_RELAY, OUTPUT);
